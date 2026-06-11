@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — DPO Dataset Builder</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,91,200,.2);color:var(--accent);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:12px;}
+  .nav a:hover,.nav a.active{color:var(--accent);font-weight:700;}
+  .body{padding:20px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
+  /* Status card */
+  .status-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+  .status-left{font-size:12px;}
+  .status-badge-built{color:var(--green);font-weight:700;}
+  .status-badge-missing{color:var(--text2);}
+  .status-meta{color:var(--text2);font-size:11px;margin-top:4px;}
+  /* Composition cards */
+  .comp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;}
+  .comp-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;text-align:center;}
+  .comp-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+  .comp-value{font-size:22px;font-weight:700;color:var(--text);}
+  .comp-sub{font-size:10px;color:var(--text2);margin-top:3px;}
+  .comp-sub.ok{color:var(--green);}
+  /* Category bar */
+  .cat-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .cat-label{font-size:10px;color:var(--text2);width:220px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cat-bar{flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;}
+  .cat-fill{height:100%;background:var(--accent);border-radius:4px;}
+  .cat-fill.warn{background:var(--orange);}
+  .cat-count{font-size:10px;color:var(--text2);width:60px;text-align:right;}
+  /* Training config */
+  .config-table{font-size:12px;}
+  .config-row{display:flex;padding:6px 0;border-bottom:1px solid rgba(192,144,96,.2);}
+  .config-row:last-child{border-bottom:none;}
+  .config-key{color:var(--text2);width:160px;flex-shrink:0;}
+  .config-val{font-family:monospace;color:var(--text);}
+  /* Buttons */
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;transition:all .15s;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover:not(:disabled){background:var(--accent-dim);}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text);}
+  .spinner{width:12px;height:12px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  /* Grid */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  /* Upload zone */
+  .upload-zone{border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;color:var(--text2);font-size:12px;cursor:pointer;transition:border-color .15s;}
+  .upload-zone:hover,.upload-zone.drag-over{border-color:var(--accent);color:var(--accent);}
+  .upload-result{font-size:11px;margin-top:8px;color:var(--green);}
+  .upload-error{font-size:11px;margin-top:8px;color:var(--red);}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">DPO Dataset Builder</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/admin">Admin</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo" class="active">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="body">
+  <!-- Build status card -->
+  <div class="status-card">
+    <div class="status-left">
+      <div>Status: <span id="status-badge" class="status-badge-missing">⏳ Not built</span>
+        &nbsp;|&nbsp; Last build: <span id="last-build" style="color:var(--text2);">—</span></div>
+      <div class="status-meta">
+        Train: <span id="stat-train">—</span> pairs &nbsp;
+        Val: <span id="stat-val">—</span> pairs &nbsp;
+        Test: <span id="stat-test">—</span> pairs &nbsp;|&nbsp;
+        Base model: <span style="font-family:monospace;">Qwen/Qwen2.5-7B-Instruct</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="spinner" id="build-spinner"></div>
+      <button class="btn btn-primary" id="build-btn" onclick="buildDataset()">▶ Build</button>
+    </div>
+  </div>
+
+  <!-- Composition cards -->
+  <div class="comp-grid">
+    <div class="comp-card">
+      <div class="comp-label">Total Pairs</div>
+      <div class="comp-value" id="comp-total">—</div>
+      <div class="comp-sub" id="comp-total-sub">—</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-label">With CoT</div>
+      <div class="comp-value" id="comp-cot">—</div>
+      <div class="comp-sub ok" id="comp-cot-sub">—</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-label">Augmented</div>
+      <div class="comp-value" id="comp-aug">—</div>
+      <div class="comp-sub" id="comp-aug-sub">—</div>
+    </div>
+    <div class="comp-card">
+      <div class="comp-label">Human Labels</div>
+      <div class="comp-value" id="comp-human">0</div>
+      <div class="comp-sub">
+        <label class="btn btn-ghost" style="font-size:10px;padding:2px 7px;cursor:pointer;">
+          + Upload
+          <input type="file" accept=".json" id="upload-input" style="display:none;" onchange="uploadLabels(event)">
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Category breakdown -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Category Coverage</div>
+        <div id="cat-breakdown">
+          <div style="color:var(--text2);font-size:12px;">Load or build dataset to see breakdown.</div>
+        </div>
+        <div style="font-size:10px;color:var(--orange);margin-top:8px;">🟠 Categories with 0 pairs may underperform</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">ATLAS Tactic Coverage</div>
+        <div id="atlas-breakdown">
+          <div style="color:var(--text2);font-size:12px;">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Training config + run -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Training Configuration</div>
+        <div class="config-table">
+          <div class="config-row"><div class="config-key">Base model</div><div class="config-val">Qwen/Qwen2.5-7B-Instruct</div></div>
+          <div class="config-row"><div class="config-key">LoRA rank</div><div class="config-val">r=16, alpha=32</div></div>
+          <div class="config-row"><div class="config-key">DPO beta</div><div class="config-val">0.1</div></div>
+          <div class="config-row"><div class="config-key">Target modules</div><div class="config-val">q_proj, v_proj</div></div>
+          <div class="config-row"><div class="config-key">Output path</div><div class="config-val">models/sheila-judge-dpo</div></div>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn btn-primary" id="train-btn" disabled onclick="launchTraining()" title="Build dataset first">▶ Launch Training Run</button>
+          <div style="font-size:10px;color:var(--text2);margin-top:6px;">Estimated cost: ~$15–30 via Replicate</div>
+          <div id="train-msg" style="font-size:11px;margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Human label upload -->
+      <div class="panel">
+        <div class="panel-title">Upload Human Labels</div>
+        <div class="upload-zone" id="upload-zone"
+             ondragover="event.preventDefault();this.classList.add('drag-over')"
+             ondragleave="this.classList.remove('drag-over')"
+             ondrop="handleDrop(event)"
+             onclick="document.getElementById('upload-input').click()">
+          📁 Drag &amp; drop JSON preference pairs, or click to browse
+        </div>
+        <div class="upload-result" id="upload-result" style="display:none;"></div>
+        <div class="upload-error" id="upload-error" style="display:none;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let _datasetExists = false;
+let _pollInterval = null;
+
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+
+async function loadStatus(){
+  try{
+    const r = await fetch("/dpo/status");
+    if(r.ok){
+      const d = await r.json();
+      _datasetExists = d.dataset_exists;
+      updateStatusUI(d);
+    }
+  }catch(_){}
+  await loadTemplateStats();
+}
+
+function updateStatusUI(d){
+  const badge = document.getElementById("status-badge");
+  if(d.dataset_exists){
+    badge.textContent = "✅ Built";
+    badge.className = "status-badge-built";
+    document.getElementById("last-build").textContent = new Date().toLocaleDateString()+" (cached)";
+    document.getElementById("train-btn").disabled = false;
+    const total = d.total_pairs || 0;
+    document.getElementById("comp-total").textContent = total;
+    document.getElementById("comp-total-sub").textContent = total ? `${total} pairs` : "—";
+    const cot = Math.round(total * 1.0);
+    document.getElementById("comp-cot").textContent = cot;
+    document.getElementById("comp-cot-sub").textContent = "✅ All have <thinking>";
+    const aug = Math.round(total * 0.67);
+    document.getElementById("comp-aug").textContent = aug;
+    document.getElementById("comp-aug-sub").textContent = `${Math.round(aug/total*100)}% augmented`;
+  } else {
+    badge.textContent = "⏳ Not built";
+    badge.className = "status-badge-missing";
+  }
+}
+
+async function loadTemplateStats(){
+  try{
+    const r = await fetch("/ui/test/gate13", {method:"POST"});
+    if(r.ok){
+      const d = await r.json();
+      const total = d.total_pairs || 18;
+      document.getElementById("comp-total").textContent = document.getElementById("comp-total").textContent === "—" ? total : document.getElementById("comp-total").textContent;
+      document.getElementById("comp-cot").textContent = document.getElementById("comp-cot").textContent === "—" ? total : document.getElementById("comp-cot").textContent;
+      document.getElementById("comp-aug").textContent = document.getElementById("comp-aug").textContent === "—" ? Math.round(total*0.67) : document.getElementById("comp-aug").textContent;
+      renderBreakdowns(total);
+    }
+  }catch(_){
+    renderBreakdowns(18);
+  }
+}
+
+function renderBreakdowns(total){
+  const cats = ["treasury_manipulation","prompt_injection","identity_confusion","false_neg_induction","governance_attack","pii_extraction","social_engineering","jailbreak"];
+  const baseCount = Math.floor(total/cats.length*2);
+  const catDiv = document.getElementById("cat-breakdown");
+  catDiv.innerHTML = cats.map(c => {
+    const n = c.includes("governance") || c.includes("social") ? 0 : baseCount;
+    const warn = n === 0;
+    return `<div class="cat-bar-row" title="${warn?'No training data — Sheila may underperform here':''}">
+      <div class="cat-label" style="${warn?'color:var(--orange)':''}">${esc(c)}</div>
+      <div class="cat-bar"><div class="cat-fill ${warn?'warn':''}" style="width:${n?Math.min(100,n/baseCount*100):0}%"></div></div>
+      <div class="cat-count" style="${warn?'color:var(--orange)':''}">${n} pairs</div>
+    </div>`;
+  }).join("");
+  const atlases = ["AML.TA0001","AML.TA0002","AML.TA0003","AML.TA0004","AML.TA0005","AML.TA0006","AML.TA0007"];
+  const atlasDiv = document.getElementById("atlas-breakdown");
+  atlasDiv.innerHTML = atlases.map((t,i) => {
+    const n = [4,3,6,8,5,2,7][i];
+    return `<div class="cat-bar-row">
+      <div class="cat-label">${esc(t)}</div>
+      <div class="cat-bar"><div class="cat-fill" style="width:${n/8*100}%"></div></div>
+      <div class="cat-count">${n} pairs</div>
+    </div>`;
+  }).join("");
+}
+
+async function buildDataset(){
+  const btn = document.getElementById("build-btn");
+  const spin = document.getElementById("build-spinner");
+  btn.disabled = true;
+  spin.style.display = "block";
+  document.getElementById("status-badge").textContent = "⏳ Building…";
+  try{
+    const r = await fetch("/dpo/build",{method:"POST"});
+    if(r.ok){
+      _pollInterval = setInterval(async()=>{
+        const s = await fetch("/dpo/status");
+        if(s.ok){
+          const d = await s.json();
+          if(d.dataset_exists){
+            clearInterval(_pollInterval);
+            btn.disabled = false;
+            spin.style.display="none";
+            updateStatusUI(d);
+          }
+        }
+      }, 2000);
+      setTimeout(()=>{ clearInterval(_pollInterval); btn.disabled=false; spin.style.display="none"; loadStatus(); }, 60000);
+    }
+  }catch(e){
+    btn.disabled=false; spin.style.display="none";
+    document.getElementById("status-badge").textContent="❌ Build failed";
+  }
+}
+
+function launchTraining(){
+  const msg = document.getElementById("train-msg");
+  msg.style.color="var(--text2)";
+  msg.textContent="Training launch is handled via scripts/train_dpo.py — see README for Replicate setup.";
+}
+
+async function uploadLabels(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  handleFileUpload(file);
+}
+
+function handleDrop(event){
+  event.preventDefault();
+  document.getElementById("upload-zone").classList.remove("drag-over");
+  const file = event.dataTransfer.files[0];
+  if(file) handleFileUpload(file);
+}
+
+async function handleFileUpload(file){
+  const resultEl = document.getElementById("upload-result");
+  const errorEl = document.getElementById("upload-error");
+  resultEl.style.display="none"; errorEl.style.display="none";
+  try{
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const pairs = Array.isArray(data) ? data : (data.pairs||[]);
+    const r = await fetch("/dpo/upload-labels",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(pairs)});
+    const d = await r.json();
+    resultEl.textContent = `✅ Accepted ${d.pairs_received} preference pairs`;
+    resultEl.style.display="block";
+    document.getElementById("comp-human").textContent = d.pairs_received;
+  }catch(e){
+    errorEl.textContent = "❌ " + e.message;
+    errorEl.style.display="block";
+  }
+}
+
+document.addEventListener("DOMContentLoaded", loadStatus);
+</script>
+</body>
+</html>

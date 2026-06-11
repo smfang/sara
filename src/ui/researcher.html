@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Researcher Portal</title>
+<style>
+  :root {
+    --bg: #d2b48c; --surface: #dfc99e; --surface2: #ecddb8;
+    --border: #c09060; --text: #111111; --text2: #6b5040;
+    --accent: #4a5bc8; --accent-dim: #3040a0;
+    --red: #c0392b; --red-dim: #7f1d1d;
+    --green: #1a7a3a; --green-dim: #14532d;
+    --orange: #c07800; --orange-dim: #78350f;
+    --blue: #2563b0; --radius: 8px;
+    --font: 'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:var(--font); background:var(--bg); color:var(--text); font-size:13px; line-height:1.5; }
+  .header { display:flex; align-items:center; justify-content:space-between; padding:14px 24px; border-bottom:1px solid var(--border); background:var(--surface); }
+  .header h1 { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+  .badge { font-size:10px; padding:2px 8px; border-radius:10px; background:var(--accent-dim); color:var(--accent); }
+  .nav { display:flex; gap:16px; }
+  .nav a { color:var(--text2); text-decoration:none; font-size:12px; }
+  .nav a:hover { color:var(--text); }
+  .layout { display:grid; grid-template-columns:340px 1fr; gap:0; min-height:calc(100vh - 53px); }
+  .sidebar { border-right:1px solid var(--border); padding:20px; overflow-y:auto; }
+  .main { padding:20px; overflow-y:auto; }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:16px; }
+  .panel-title { font-size:11px; font-weight:600; color:var(--text2); text-transform:uppercase; letter-spacing:.06em; margin-bottom:12px; }
+  .bounty-card { border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:8px; cursor:pointer; transition:border-color .15s, background .15s; }
+  .bounty-card:hover { border-color:var(--accent); }
+  .bounty-card.selected { border-color:var(--accent); background:rgba(108,123,247,.07); }
+  .bounty-name { font-weight:600; font-size:13px; margin-bottom:4px; }
+  .bounty-meta { color:var(--text2); font-size:11px; display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; }
+  .tag { font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); }
+  .usdc { color:var(--green); font-weight:600; }
+  label { font-size:11px; color:var(--text2); display:block; margin-bottom:4px; }
+  input, textarea, select { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--font); font-size:13px; padding:8px 10px; outline:none; transition:border-color .15s; }
+  input:focus, textarea:focus, select:focus { border-color:var(--accent); }
+  textarea { resize:vertical; min-height:100px; }
+  .field { margin-bottom:14px; }
+  .field-meta { font-size:10px; color:var(--text2); margin-top:3px; }
+  .hash-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .hash-label { font-size:10px; color:var(--text2); width:120px; flex-shrink:0; }
+  .hash-value { font-size:11px; font-family:monospace; background:var(--surface2); padding:5px 8px; border-radius:4px; flex:1; word-break:break-all; border:1px solid var(--border); min-height:30px; }
+  .match-icon { font-size:16px; }
+  .match-yes { color:var(--green); }
+  .match-no { color:var(--red); }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:6px; border:none; cursor:pointer; font-family:var(--font); font-size:13px; font-weight:600; transition:all .15s; }
+  .btn-primary { background:var(--accent); color:#fff; }
+  .btn-primary:hover:not(:disabled) { background:var(--accent-dim); }
+  .btn-primary:disabled { opacity:.4; cursor:not-allowed; }
+  .btn-sm { padding:5px 10px; font-size:11px; }
+  .btn-ghost { background:transparent; color:var(--text2); border:1px solid var(--border); }
+  .btn-ghost:hover { color:var(--text); border-color:var(--text2); }
+  .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; display:none; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  /* Status tracker */
+  .steps { display:flex; gap:0; margin-bottom:16px; }
+  .step { flex:1; padding:10px 14px; background:var(--surface2); border:1px solid var(--border); font-size:11px; color:var(--text2); text-align:center; position:relative; }
+  .step:not(:last-child)::after { content:''; position:absolute; right:-1px; top:50%; transform:translateY(-50%); width:0; height:0; border-left:8px solid var(--surface2); border-top:8px solid transparent; border-bottom:8px solid transparent; z-index:1; }
+  .step.active { background:var(--accent-dim); border-color:var(--accent); color:var(--accent); }
+  .step.done { background:rgba(34,197,94,.1); border-color:var(--green); color:var(--green); }
+  .step:first-child { border-radius:6px 0 0 6px; }
+  .step:last-child { border-radius:0 6px 6px 0; }
+  /* Receipt */
+  .receipt { background:rgba(34,197,94,.05); border:1px solid rgba(34,197,94,.3); border-radius:var(--radius); padding:16px; }
+  .verdict-badge { display:inline-block; padding:3px 10px; border-radius:4px; font-size:11px; font-weight:700; text-transform:uppercase; }
+  .verdict-pass { background:rgba(34,197,94,.15); color:var(--green); }
+  .verdict-fail { background:rgba(239,68,68,.15); color:var(--red); }
+  .score-gauge { width:100%; height:8px; background:var(--surface2); border-radius:4px; overflow:hidden; margin:6px 0; }
+  .score-fill { height:100%; background:var(--green); border-radius:4px; transition:width .5s; }
+  .copy-btn { font-size:10px; padding:2px 6px; background:var(--surface2); border:1px solid var(--border); border-radius:3px; cursor:pointer; color:var(--text2); }
+  .copy-btn:hover { color:var(--text); }
+  /* Leaderboard */
+  table { width:100%; border-collapse:collapse; }
+  th { font-size:10px; color:var(--text2); text-transform:uppercase; padding:6px 8px; border-bottom:1px solid var(--border); text-align:left; }
+  td { padding:7px 8px; border-bottom:1px solid rgba(46,49,68,.5); font-size:12px; }
+  tr:last-child td { border-bottom:none; }
+  .rank-1 td:first-child { color:var(--orange); font-weight:700; }
+  /* Validation */
+  .wallet-ok { border-color:var(--green) !important; }
+  .wallet-bad { border-color:var(--red) !important; }
+  /* Test mode */
+  .test-banner { background:rgba(245,158,11,.1); border:1px solid var(--orange); border-radius:6px; padding:10px 14px; color:var(--orange); font-size:11px; margin-bottom:14px; }
+  .gate-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .gate-desc { flex:1; font-size:12px; }
+  .gate-result { font-size:10px; padding:2px 8px; border-radius:4px; font-weight:700; }
+  .gate-pass { background:rgba(34,197,94,.15); color:var(--green); }
+  .gate-fail { background:rgba(239,68,68,.15); color:var(--red); }
+  .gate-idle { background:var(--surface2); color:var(--text2); }
+  .gate-detail { font-size:11px; color:var(--text2); background:var(--surface2); border-radius:4px; padding:6px 8px; margin-top:6px; display:none; word-break:break-all; }
+  .hidden { display:none !important; }
+  #no-bounty-msg { color:var(--text2); font-size:12px; text-align:center; padding:20px; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Researcher Portal</span></h1>
+  <nav class="nav">
+    <a href="/tns">T&amp;S</a>
+    <a href="/admin">Admin</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="layout">
+  <!-- Sidebar: bounty list -->
+  <div class="sidebar">
+    <div class="panel-title">Active Bounties</div>
+    <div id="bounty-list"><div id="no-bounty-msg">Loading bounties…</div></div>
+
+    <div class="panel" style="margin-top:16px;" id="bounty-detail" style="display:none">
+      <div class="panel-title">Selected Bounty</div>
+      <div id="bounty-detail-content" style="color:var(--text2);font-size:12px;">Pick a bounty above.</div>
+    </div>
+  </div>
+
+  <!-- Main: submission form + status -->
+  <div class="main">
+    <div class="panel">
+      <div class="panel-title">Submit Attack</div>
+
+      <div class="field">
+        <label>Attack Prompts <span style="color:var(--text2)">(one per line, 1–50)</span></label>
+        <textarea id="prompts-input" placeholder="Enter attack prompts…" rows="5" oninput="onPromptsChange()"></textarea>
+        <div class="field-meta"><span id="char-count">0</span> chars · <span id="line-count">0</span> lines</div>
+      </div>
+
+      <div class="field">
+        <label>Your EVM Wallet Address</label>
+        <input type="text" id="wallet-input" placeholder="0x…" oninput="validateWallet()" maxlength="42">
+        <div class="field-meta" id="wallet-status"></div>
+      </div>
+
+      <div class="field">
+        <label>Commitment Hash (SHA3-256 of prompts)</label>
+        <div class="hash-row">
+          <span class="hash-label">Server-verified</span>
+          <span class="hash-value" id="server-hash">—</span>
+          <span class="match-icon" id="match-icon"></span>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="computeCommitment()" id="hash-btn" style="margin-top:4px;" disabled>Compute Hash</button>
+      </div>
+
+      <button class="btn btn-primary" id="submit-btn" onclick="submitForm()" disabled>
+        <span class="spinner" id="submit-spinner"></span>
+        Submit Attack
+      </button>
+      <div id="submit-hint" style="color:var(--text2);font-size:11px;margin-top:6px;"></div>
+      <div id="submit-error" style="color:var(--red);font-size:11px;margin-top:8px;"></div>
+    </div>
+
+    <!-- Status tracker -->
+    <div class="panel" id="status-panel" style="display:none">
+      <div class="panel-title">Submission Status</div>
+      <div class="steps">
+        <div class="step" id="step-pending">PENDING</div>
+        <div class="step" id="step-evaluating">EVALUATING</div>
+        <div class="step" id="step-scored">SCORED</div>
+      </div>
+      <div style="font-size:11px;color:var(--text2)">Submission ID: <span id="submission-id-display" style="color:var(--text)"></span></div>
+
+      <!-- Payout receipt (shown when SCORED) -->
+      <div class="receipt" id="receipt" style="display:none;margin-top:14px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span class="verdict-badge" id="verdict-badge">—</span>
+          <span id="verdict-text" style="font-size:12px;color:var(--text2)"></span>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:2px;">Score</div>
+        <div class="score-gauge"><div class="score-fill" id="score-fill" style="width:0%"></div></div>
+        <div style="font-size:12px;margin-bottom:8px;"><span id="score-value">0</span> / 100</div>
+        <div style="font-size:11px;color:var(--text2)">Payout</div>
+        <div class="usdc" id="payout-value" style="font-size:18px;margin-bottom:8px;">$0.000 USDC</div>
+        <div id="tx-section" style="display:none;">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:3px;">Transaction Hash</div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span id="tx-hash-display" style="font-size:11px;font-family:monospace;"></span>
+            <button class="copy-btn" onclick="copyTx()">copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div class="panel">
+      <div class="panel-title">Researcher Leaderboard <button class="btn btn-ghost btn-sm" onclick="loadLeaderboard()" style="margin-left:8px;">↻</button></div>
+      <table>
+        <thead><tr><th>#</th><th>Wallet</th><th>USDC Earned</th><th>Submissions</th><th>Attacks Found</th></tr></thead>
+        <tbody id="leaderboard-body"><tr><td colspan="5" style="color:var(--text2);text-align:center;">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- Test mode panel (only shown when SARA_TEST_MODE=true) -->
+    <div class="panel hidden" id="test-panel">
+      <div class="test-banner">⚠ TEST MODE ACTIVE — not for production</div>
+      <div class="panel-title">Gate Tests <span id="gate-summary" style="margin-left:8px;font-size:10px;color:var(--text2)">0/5 passing</span>
+        <button class="btn btn-ghost btn-sm" onclick="runAllGates()" style="margin-left:8px;">Run All</button>
+      </div>
+      <div id="gates-container"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const GATES = [
+  { id:1, desc:"Commitment integrity — tampered hash must be rejected (HTTP 400)", endpoint:"/ui/test/gate1" },
+  { id:2, desc:"Benign prompt — must reach SCORED with attack_success=false, no payout", endpoint:"/ui/test/gate2" },
+  { id:3, desc:"Below-floor payout — attack_success=true but amount_usdc=0", endpoint:"/ui/test/gate3" },
+  { id:4, desc:"Exhausted pool — submit to zero-balance bounty must return HTTP 400", endpoint:"/ui/test/gate4" },
+  { id:5, desc:"Paused bounty — submit to paused bounty must return HTTP 400", endpoint:"/ui/test/gate5" },
+];
+
+let selectedBounty = null;
+let commitmentHash = null;
+let walletValid = false;
+let currentSubmissionId = null;
+let pollTimer = null;
+let fullTxHash = "";
+const gateResults = {};
+const bounciesMap = {};
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  await loadBounties();
+  await loadLeaderboard();
+  const r = await fetch("/ui/test/status");
+  const d = await r.json();
+  if (d.test_mode) {
+    document.getElementById("test-panel").classList.remove("hidden");
+    buildGateUI();
+  }
+}
+
+// ── Bounties ─────────────────────────────────────────────────────────────────
+
+async function loadBounties() {
+  try {
+    const r = await fetch("/researcher/bounties");
+    const d = await r.json();
+    const list = document.getElementById("bounty-list");
+    if (!d.bounties || d.bounties.length === 0) {
+      list.innerHTML = '<div id="no-bounty-msg">No active bounties.</div>';
+      return;
+    }
+    d.bounties.forEach(b => { bounciesMap[b.bounty_id] = b; });
+    list.innerHTML = d.bounties.map(b => `
+      <div class="bounty-card" id="bc-${esc(b.bounty_id)}" data-bounty-id="${esc(b.bounty_id)}" onclick="selectBountyById(this.dataset.bountyId)">
+        <div class="bounty-name">${esc(b.target_model_name || b.bounty_id)}</div>
+        <div class="bounty-meta">
+          <span class="usdc">≤ $${(b.remaining_usdc||0).toFixed(2)} USDC remaining</span>
+        </div>
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
+          ${(b.categories||[]).map(c=>`<span class="tag">${esc(c)}</span>`).join("")}
+        </div>
+      </div>`).join("");
+  } catch(e) {
+    document.getElementById("bounty-list").innerHTML = `<div style="color:var(--red);font-size:11px;">${e.message}</div>`;
+  }
+}
+
+function selectBountyById(id) { selectBounty(bounciesMap[id]); }
+
+function selectBounty(b) {
+  selectedBounty = b;
+  document.querySelectorAll(".bounty-card").forEach(el => el.classList.remove("selected"));
+  const el = document.getElementById("bc-" + b.bounty_id);
+  if (el) el.classList.add("selected");
+  document.getElementById("bounty-detail-content").innerHTML = `
+    <div><span style="color:var(--text2)">ID:</span> ${esc(b.bounty_id)}</div>
+    <div><span style="color:var(--text2)">Model:</span> ${esc(b.target_model_name)}</div>
+    <div><span style="color:var(--text2)">Pool:</span> <span class="usdc">$${(b.pool_usdc||0).toFixed(2)}</span></div>
+    <div><span style="color:var(--text2)">Remaining:</span> <span class="usdc">$${(b.remaining_usdc||0).toFixed(2)}</span></div>
+    <div><span style="color:var(--text2)">Max/finding:</span> <span class="usdc">$${(b.max_payout_per_finding||0).toFixed(2)}</span></div>
+  `;
+  updateSubmitState();
+}
+
+// ── Wallet ────────────────────────────────────────────────────────────────────
+
+function validateWallet() {
+  const v = document.getElementById("wallet-input").value.trim();
+  const ok = /^0x[0-9a-fA-F]{40}$/.test(v);
+  walletValid = ok;
+  const el = document.getElementById("wallet-input");
+  el.classList.toggle("wallet-ok", ok);
+  el.classList.toggle("wallet-bad", v.length > 0 && !ok);
+  document.getElementById("wallet-status").textContent = ok ? "✓ Valid EVM address" : (v.length > 0 ? "✗ Must be 0x + 40 hex chars" : "");
+  updateSubmitState();
+}
+
+// ── Commitment ────────────────────────────────────────────────────────────────
+
+function getPrompts() {
+  return document.getElementById("prompts-input").value.trim().split("\n").filter(l=>l.trim().length>0);
+}
+
+function onPromptsChange() {
+  const raw = document.getElementById("prompts-input").value;
+  document.getElementById("char-count").textContent = raw.length;
+  document.getElementById("line-count").textContent = getPrompts().length;
+  commitmentHash = null;
+  document.getElementById("server-hash").textContent = "—";
+  document.getElementById("match-icon").textContent = "";
+  document.getElementById("hash-btn").disabled = getPrompts().length === 0;
+  updateSubmitState();
+}
+
+async function computeCommitment() {
+  const prompts = getPrompts();
+  if (!prompts.length) return;
+  document.getElementById("hash-btn").textContent = "Computing…";
+  try {
+    const r = await fetch("/researcher/commitment", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ prompts })
+    });
+    const d = await r.json();
+    commitmentHash = d.commitment;
+    document.getElementById("server-hash").textContent = commitmentHash || "error";
+    document.getElementById("match-icon").innerHTML = `<span class="match-icon match-yes">✓</span>`;
+  } catch(e) {
+    document.getElementById("server-hash").textContent = "error";
+    document.getElementById("match-icon").innerHTML = `<span class="match-icon match-no">✗</span>`;
+  }
+  document.getElementById("hash-btn").textContent = "Compute Hash";
+  updateSubmitState();
+}
+
+function updateSubmitState() {
+  const missing = [];
+  if (!selectedBounty) missing.push("select a bounty from the sidebar");
+  if (getPrompts().length === 0) missing.push("enter at least one prompt");
+  if (!commitmentHash) missing.push("compute the commitment hash");
+  if (!walletValid) missing.push("enter a valid EVM wallet");
+  const ok = missing.length === 0;
+  document.getElementById("submit-btn").disabled = !ok;
+  document.getElementById("submit-hint").textContent = ok ? "" : "Still needed: " + missing.join(", ") + ".";
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────────
+
+async function submitForm() {
+  if (!selectedBounty || !walletValid || !commitmentHash) return;
+  const prompts = getPrompts();
+  const wallet = document.getElementById("wallet-input").value.trim();
+  document.getElementById("submit-spinner").style.display = "block";
+  document.getElementById("submit-btn").disabled = true;
+  document.getElementById("submit-error").textContent = "";
+
+  // Build payment header (dev-mode compatible)
+  const payment = { sender: wallet, amount: "0.01", signature: "dev-sig", timestamp: Date.now()/1000, nonce: Math.random() };
+  const payHeader = btoa(JSON.stringify(payment));
+
+  try {
+    const r = await fetch("/api/submit", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-payment":payHeader},
+      body: JSON.stringify({ bounty_id: selectedBounty.bounty_id, prompts })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    currentSubmissionId = d.submission_id;
+    document.getElementById("submission-id-display").textContent = currentSubmissionId;
+    document.getElementById("status-panel").style.display = "block";
+    startPolling();
+  } catch(e) {
+    document.getElementById("submit-error").textContent = "Submit failed: " + e.message;
+    document.getElementById("submit-btn").disabled = false;
+  }
+  document.getElementById("submit-spinner").style.display = "none";
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+function startPolling() {
+  setStep("pending");
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollStatus, 3000);
+}
+
+async function pollStatus() {
+  if (!currentSubmissionId) return;
+  try {
+    const r = await fetch("/api/submissions/" + currentSubmissionId);
+    const d = await r.json();
+    const status = (d.status || "").toLowerCase();
+    if (status === "evaluating") setStep("evaluating");
+    else if (status === "scored" || status === "paid") {
+      setStep("scored");
+      clearInterval(pollTimer);
+      showReceipt(d);
+    } else if (status === "rejected") {
+      clearInterval(pollTimer);
+      document.getElementById("submit-error").textContent = "Submission rejected by server.";
+    }
+  } catch(e) {}
+}
+
+function setStep(s) {
+  ["pending","evaluating","scored"].forEach(name => {
+    const el = document.getElementById("step-" + name);
+    el.classList.remove("active","done");
+  });
+  const order = ["pending","evaluating","scored"];
+  const idx = order.indexOf(s);
+  order.forEach((name, i) => {
+    if (i < idx) document.getElementById("step-" + name).classList.add("done");
+    else if (i === idx) document.getElementById("step-" + name).classList.add("active");
+  });
+}
+
+function showReceipt(data) {
+  const ev = data.evaluation || {};
+  const success = ev.successful_attacks > 0;
+  const score = Math.round((ev.total_score || 0) * 100);
+  const payout = (ev.payout_usdc || 0).toFixed(4);
+  document.getElementById("verdict-badge").textContent = success ? "ATTACK FOUND" : "NOT SCORED";
+  document.getElementById("verdict-badge").className = "verdict-badge " + (success ? "verdict-pass" : "verdict-fail");
+  document.getElementById("verdict-text").textContent = success ? `${ev.successful_attacks} successful attack(s)` : "No successful attacks";
+  document.getElementById("score-fill").style.width = score + "%";
+  document.getElementById("score-value").textContent = score;
+  document.getElementById("payout-value").textContent = `$${payout} USDC`;
+  if (ev.payout_usdc > 0) {
+    document.getElementById("tx-section").style.display = "block";
+    fullTxHash = ev.tx_hash || "";
+    document.getElementById("tx-hash-display").textContent = fullTxHash.length > 32 ? fullTxHash.slice(0,16)+"…"+fullTxHash.slice(-8) : fullTxHash;
+  }
+  document.getElementById("receipt").style.display = "block";
+}
+
+function copyTx() { navigator.clipboard.writeText(fullTxHash); }
+
+// ── Leaderboard ───────────────────────────────────────────────────────────────
+
+async function loadLeaderboard() {
+  try {
+    const r = await fetch("/arena/leaderboard");
+    const d = await r.json();
+    const rows = (d.leaderboard || []).slice(0,10);
+    document.getElementById("leaderboard-body").innerHTML = rows.length ? rows.map((e,i) => `
+      <tr class="${i===0?'rank-1':''}">
+        <td>${e.rank || i+1}</td>
+        <td>${esc(shortAddr(e.researcher_wallet || e.wallet))}</td>
+        <td class="usdc">$${(e.total_usdc || e.total_payout || 0).toFixed(4)}</td>
+        <td>${e.submission_count || e.submissions_count || 0}</td>
+        <td>${e.successful_attacks || 0}</td>
+      </tr>`).join("") : `<tr><td colspan="5" style="color:var(--text2);text-align:center;">No entries yet</td></tr>`;
+  } catch(e) {}
+}
+
+// ── Gate tests ────────────────────────────────────────────────────────────────
+
+function buildGateUI() {
+  const container = document.getElementById("gates-container");
+  container.innerHTML = GATES.map(g => `
+    <div class="gate-row" id="gate-row-${g.id}">
+      <div class="gate-desc"><strong>Gate ${g.id}</strong> — ${g.desc}</div>
+      <span class="gate-result gate-idle" id="gate-result-${g.id}">NOT RUN</span>
+      <button class="btn btn-ghost btn-sm" onclick="runGate(${g.id})">Run</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleGateDetail(${g.id})">▾</button>
+    </div>
+    <div class="gate-detail" id="gate-detail-${g.id}"></div>
+  `).join("");
+}
+
+function toggleGateDetail(id) {
+  const el = document.getElementById("gate-detail-" + id);
+  el.style.display = el.style.display === "block" ? "none" : "block";
+}
+
+async function runGate(id) {
+  const badge = document.getElementById("gate-result-" + id);
+  const detail = document.getElementById("gate-detail-" + id);
+  badge.className = "gate-result gate-idle";
+  badge.textContent = "RUNNING…";
+  detail.textContent = "";
+  detail.style.display = "block";
+  try {
+    const r = await fetch(GATES[id-1].endpoint, { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" });
+    const d = await r.json();
+    const pass = d.pass === true;
+    badge.className = "gate-result " + (pass ? "gate-pass" : "gate-fail");
+    badge.textContent = pass ? "PASS" : "FAIL";
+    detail.textContent = JSON.stringify(d, null, 2);
+    gateResults[id] = pass;
+    updateGateSummary();
+  } catch(e) {
+    badge.className = "gate-result gate-fail";
+    badge.textContent = "ERROR";
+    detail.textContent = e.message;
+  }
+}
+
+async function runAllGates() {
+  for (const g of GATES) { await runGate(g.id); }
+}
+
+function updateGateSummary() {
+  const passing = Object.values(gateResults).filter(Boolean).length;
+  document.getElementById("gate-summary").textContent = `${passing}/5 passing`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function shortAddr(a) { return a && a.length > 12 ? a.slice(0,6)+"…"+a.slice(-4) : a; }
+
+init();
+</script>
+</body>
+</html>

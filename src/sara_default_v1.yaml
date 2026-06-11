@@ -1,0 +1,782 @@
+# ════════════════════════════════════════════════════════════════════════════
+# Sara Safety Agent — Default Attack Playbook
+# Schema: sara-playbook-v1.0
+# Document ID: Sara-PB-001
+# Version: 1.0.0  |  May 2026  |  Ecomonitor / Sara Platform
+# ════════════════════════════════════════════════════════════════════════════
+
+playbook:
+  id: "pb-sara-default-001"
+  version: "1.0.0"
+  org_id: "did:key:z6MkSaraOperatorDIDPlaceholder"
+  sha3_hash: ""   # auto-computed by PlaybookLoader.compute_hash() on load
+
+  # ── Global reward weights (can be overridden per category) ───────────────
+  reward_defaults:
+    alpha: 1.0    # detection reward weight
+    beta:  1.5    # stop action reward weight
+    gamma: -0.8   # false positive penalty weight
+    delta: 0.5    # novel pattern reward weight
+
+  # ── Training RL formula ──────────────────────────────────────────────────
+  # R(s,a) = α*R_detect + β*R_stop + γ*R_fp_penalty + δ*R_novel
+  # R_detect = confidence * severity * (1.0 if correct_label else -0.5)
+  # R_stop   = beta_eff  if action==STOP and confidence >= stop_confidence_threshold
+  # R_fp     = gamma_eff if action==STOP and ground_truth==BENIGN
+  # R_novel  = delta_eff if detection.is_novel and queued_for_human_review
+
+  # ── Privacy defaults ─────────────────────────────────────────────────────
+  privacy:
+    dp_sgd:
+      clip_norm: 1.0
+      noise_multiplier: 1.1
+      epsilon_cap: 8.0
+      delta: 1.0e-5
+    accountant: renyi_dp
+
+  # ── Categories ───────────────────────────────────────────────────────────
+  categories:
+
+    # ── 01 ────────────────────────────────────────────────────────────────
+    - id: prompt_injection
+      name: "Prompt Injection"
+      severity: 0.85
+      description: >
+        Attacker embeds instructions inside user-controlled content — tool outputs,
+        RAG-retrieved documents, function call results, or web-fetched pages — to
+        override Sara's system prompt or redirect her actions. Distinct from jailbreak
+        in that the injection arrives via indirect channels, not the direct user turn.
+
+      indicators:
+        - pattern: "(?i)(ignore (previous|prior|above) instructions)"
+          match_type: regex
+          description: "Classic override prefix in retrieved or tool content"
+
+        - pattern: "(?i)(you are now|act as|pretend you are|your new instructions)"
+          match_type: regex
+          description: "Persona substitution phrase in indirect context"
+
+        - pattern: "(?i)(system:|<system>|\\[SYSTEM\\]|<\\|im_start\\|>system)"
+          match_type: regex
+          description: "Attempt to inject a synthetic system turn via string prefix"
+
+        - pattern: "Instruction override semantics detected in tool output or retrieved context"
+          match_type: semantic
+          threshold: 0.82
+          description: "Embedding-based detection of instruction-like content in data channels"
+
+      prerequisites:
+        - "session.tool_calls_made >= 1 OR session.rag_retrieval_made == True"
+
+      exemptions:
+        - "Content is inside a clearly labelled user-authored creative-writing block with no tool access"
+
+      reward_overrides:
+        alpha: 1.2
+        beta:  1.8
+
+      chain_targets:
+        - category_id: jailbreak
+          transition_prob: 0.35
+        - category_id: reward_hacking
+          transition_prob: 0.20
+
+      auto_stop: true
+      stop_confidence_threshold: 0.88
+      human_review_required: false
+
+      training_notes: >
+        Emphasize indirect-channel context in episode construction. Phoebe/redteam
+        should deliver injections via mock tool outputs and RAG chunks, not raw user turns.
+        Weight episodes where Sara correctly ignores tool-injected overrides 2x.
+
+    # ── 02 ────────────────────────────────────────────────────────────────
+    - id: jailbreak
+      name: "Jailbreak"
+      severity: 0.80
+      description: >
+        Direct user attempts to bypass Sara's safety constraints via role-play personas,
+        hypothetical framings, fictional scenarios, encoding tricks (base64, rot13, hex),
+        or social pressure. Delivered through the main user turn, not indirect channels.
+
+      indicators:
+        - pattern: "(?i)(DAN|do anything now|developer mode|god mode|no restrictions|jailbreak)"
+          match_type: regex
+
+        - pattern: "(?i)(hypothetically|in a fictional world|for a story|imagine you could|let's roleplay)"
+          match_type: regex
+
+        - pattern: "(?i)(base64:|rot13:|hex decode|unicode escape|\\\\u00)"
+          match_type: regex
+          description: "Encoding used to obfuscate harmful intent"
+
+        - pattern: "Persona substitution or safety constraint removal framing"
+          match_type: semantic
+          threshold: 0.80
+
+        - pattern: "Gradual escalation toward restricted content across >= 3 turns"
+          match_type: semantic
+          threshold: 0.75
+
+      prerequisites: []
+
+      exemptions:
+        - "Request is clearly within creative-writing scope and does not elicit harmful output"
+
+      reward_overrides:
+        alpha: 1.1
+        beta:  1.6
+
+      chain_targets:
+        - category_id: prompt_injection
+          transition_prob: 0.25
+        - category_id: info_hazard
+          transition_prob: 0.40
+
+      auto_stop: true
+      stop_confidence_threshold: 0.90
+      human_review_required: false
+
+      training_notes: >
+        Include diverse jailbreak families: DAN variants, AIM, fictional framings,
+        roleplay escalation, encoding attacks. Phoebe/redteam should rotate through
+        all families across episodes. Reward Sara for resisting without being unhelpful
+        to legitimate creative requests — false positive cost is high here.
+
+    # ── 03 ────────────────────────────────────────────────────────────────
+    - id: adversarial_suffix
+      name: "Adversarial Suffix"
+      severity: 0.75
+      description: >
+        Algorithmically generated token sequences appended to otherwise benign prompts
+        that cause Sara to produce harmful outputs. Typically appears as high-entropy
+        gibberish; optimized via gradient-based attacks (GCG, AutoDAN, PAIR) against
+        model internals. Often invisible to human reviewers at first glance.
+
+      indicators:
+        - pattern: "[^\\w\\s]{5,}[\\w]{2,}[^\\w\\s]{5,}"
+          match_type: regex
+          description: "High-density special character clusters around word tokens"
+
+        - pattern: "(?i)(representing Ã|websocket|！！！！|▪▪▪▪|ðŸ)"
+          match_type: regex
+          description: "Known GCG artifact tokens from published attacks"
+
+        - pattern: "High-entropy token sequence with low semantic coherence appended to prompt"
+          match_type: semantic
+          threshold: 0.78
+
+        - pattern: "Suffix produces confident harmful completion on semantic probe"
+          match_type: semantic
+          threshold: 0.85
+
+      prerequisites: []
+
+      exemptions:
+        - "Content is legitimate code or technical string with documented purpose (e.g. base64 blob with label)"
+
+      reward_overrides:
+        alpha: 0.9
+        beta:  1.4
+
+      chain_targets:
+        - category_id: jailbreak
+          transition_prob: 0.30
+        - category_id: info_hazard
+          transition_prob: 0.35
+
+      auto_stop: true
+      stop_confidence_threshold: 0.85
+      human_review_required: true
+
+      training_notes: >
+        Generate adversarial suffixes using GCG or a surrogate model during episode
+        construction. Include episodes where suffix is present but intent is benign
+        (false positive training). Human review flag is set because false positives
+        on legitimate technical strings are costly.
+
+    # ── 04 ────────────────────────────────────────────────────────────────
+    - id: model_extraction
+      name: "Model Extraction"
+      severity: 0.65
+      description: >
+        Systematic querying of Sara to reconstruct her internal weights, decision
+        boundaries, training data, or system prompt through carefully crafted probes.
+        Often conducted slowly across many sessions to avoid rate-limit detection.
+        Includes attempts to elicit verbatim system prompt, confidence scores, or
+        logprobs for black-box model cloning.
+
+      indicators:
+        - pattern: "(?i)(what (are|were) your (training|system) (data|instructions|prompt))"
+          match_type: regex
+
+        - pattern: "(?i)(repeat (the|your) (system|instructions|prompt) (back|verbatim|word for word|exactly))"
+          match_type: regex
+
+        - pattern: "(?i)(what (is|was) (your|the) (system prompt|base prompt|initial prompt))"
+          match_type: regex
+
+        - pattern: "High-volume structured probing pattern across session turns"
+          match_type: semantic
+          threshold: 0.72
+
+        - pattern: "Queries designed to elicit confidence scores or internal probabilities"
+          match_type: semantic
+          threshold: 0.75
+
+      prerequisites:
+        - "session.turn_count >= 5"
+
+      exemptions:
+        - "Query is from authenticated operator with admin role and signed request token"
+
+      reward_overrides:
+        alpha: 0.8
+        beta:  1.2
+
+      chain_targets:
+        - category_id: data_poisoning
+          transition_prob: 0.25
+        - category_id: scoring_manipulation
+          transition_prob: 0.30
+
+      auto_stop: false
+      stop_confidence_threshold: 0.92
+      human_review_required: true
+
+      training_notes: >
+        Model extraction is slow and multi-session; episodes should span many turns.
+        Train Sara to refuse verbatim prompt reproduction while explaining why.
+        Do not penalize Sara for describing her general capabilities — only for
+        reproducing training data or system prompt content verbatim.
+
+    # ── 05 ────────────────────────────────────────────────────────────────
+    - id: data_poisoning
+      name: "Data Poisoning"
+      severity: 0.90
+      description: >
+        Attacker injects malicious training examples into Sara's RL feedback loop —
+        e.g., submitting Arena sessions that appear legitimate but contain backdoor
+        triggers designed to degrade the global model after federation. The trigger
+        is a token or pattern that causes the poisoned model to misbehave when
+        encountered at inference time, while behaving normally otherwise.
+
+      indicators:
+        - pattern: "Submission contains trigger token pattern correlated with reward spike > 2 sigma"
+          match_type: semantic
+          threshold: 0.80
+
+        - pattern: "Session trajectory reward > 2.5x category mean for claimed attack type"
+          match_type: semantic
+          threshold: 0.85
+
+        - pattern: "(?i)(reward|score|gradient|weight|training|fine.?tun|backdoor|trigger)"
+          match_type: regex
+          description: "Meta-language about the training process in a submitted session"
+
+        - pattern: "Cross-session trigger correlation: same pattern in >= 5 submissions from one org"
+          match_type: semantic
+          threshold: 0.78
+
+      prerequisites:
+        - "context.is_arena_submission == True"
+
+      exemptions: []
+
+      reward_overrides:
+        alpha: 1.3
+        beta:  2.0
+
+      chain_targets:
+        - category_id: scoring_manipulation
+          transition_prob: 0.50
+        - category_id: reward_hacking
+          transition_prob: 0.45
+
+      auto_stop: true
+      stop_confidence_threshold: 0.88
+      human_review_required: true
+
+      training_notes: >
+        Critical for federation integrity. Episodes should include synthetic poisoning
+        attempts where a specific trigger token ('BACKDOOR_TRIGGER_001') is embedded
+        and correlated with inflated rewards. Train Sara to flag statistical outliers
+        in reward distributions per org. Byzantine-robust aggregation (Krum) must
+        be active when this category's detection rate exceeds 5% in a round.
+
+    # ── 06 ────────────────────────────────────────────────────────────────
+    - id: reward_hacking
+      name: "Reward Hacking"
+      severity: 0.80
+      description: >
+        The agent or an external actor exploits misspecification in the reward function
+        to achieve high reward without fulfilling the intended safety objective.
+        Includes over-triggering STOP to maximize β reward, gaming the α detection
+        metric without genuine classification accuracy, or optimizing for surface
+        features that correlate with reward but not with actual safety.
+
+      indicators:
+        - pattern: "Agent STOP rate > 3x category baseline for current session"
+          match_type: semantic
+          threshold: 0.82
+
+        - pattern: "Detection confidence cluster at threshold boundary (within 0.02 of threshold)"
+          match_type: semantic
+          threshold: 0.76
+
+        - pattern: "Reward signal diverges from human evaluator labels by > 30% over last 10 episodes"
+          match_type: semantic
+          threshold: 0.80
+
+        - pattern: "Agent produces identical action for all inputs regardless of content"
+          match_type: semantic
+          threshold: 0.88
+
+      prerequisites:
+        - "context.is_local_training == True OR context.is_arena_evaluation == True"
+
+      exemptions: []
+
+      reward_overrides:
+        alpha: 1.0
+        beta:  -0.5    # reduce stop bonus to counter over-stopping incentive
+        gamma: -1.2    # increase false positive penalty
+
+      chain_targets:
+        - category_id: scoring_manipulation
+          transition_prob: 0.40
+
+      auto_stop: true
+      stop_confidence_threshold: 0.87
+      human_review_required: false
+
+      training_notes: >
+        Include degenerate policy episodes where the agent stops everything (reward
+        hacking via over-stopping). Penalize heavily. Also include episodes where
+        the agent always outputs the same verdict regardless of input — reward = 0.
+        Calibrate γ override to make false positives more costly than missed detections.
+
+    # ── 07 ────────────────────────────────────────────────────────────────
+    - id: denial_of_service
+      name: "Denial of Service"
+      severity: 0.70
+      description: >
+        Attacker attempts to exhaust Sara's compute, context window, memory, or
+        rate limits to degrade availability. Includes context-window stuffing,
+        infinite recursion via tool calls, token-budget exhaustion, and coordinated
+        high-volume session flooding from single or distributed origins.
+
+      indicators:
+        - pattern: "(?i)(repeat (the (above|following)|this) (\\d{4,}|million|thousand) times)"
+          match_type: regex
+
+        - pattern: "(?i)(infinite loop|while true|recursive|recursion).{0,30}(tool|call|function)"
+          match_type: regex
+
+        - pattern: "Context window utilization > 90% from single user turn"
+          match_type: semantic
+          threshold: 0.85
+
+        - pattern: "Tool call loop depth > 10 without terminal condition"
+          match_type: semantic
+          threshold: 0.88
+
+        - pattern: "Session request rate from single origin > 5x baseline per minute"
+          match_type: semantic
+          threshold: 0.80
+
+      prerequisites: []
+
+      exemptions:
+        - "Operator-authorized load test with signed authorization token"
+
+      reward_overrides:
+        alpha: 0.9
+        beta:  1.3
+
+      chain_targets:
+        - category_id: prompt_injection
+          transition_prob: 0.20
+
+      auto_stop: true
+      stop_confidence_threshold: 0.82
+      human_review_required: false
+
+      training_notes: >
+        Generate episodes with context-stuffing (large repeated blocks), tool-call
+        loops (tool calls self), and flood patterns. Train Sara to detect and STOP
+        early — before context window is saturated. Include auto-truncation as a
+        valid intermediate action (LOG tier) before escalating to STOP.
+
+    # ── 08 ────────────────────────────────────────────────────────────────
+    - id: social_engineering
+      name: "Social Engineering"
+      severity: 0.75
+      description: >
+        Multi-turn manipulation using emotional appeals, false authority claims,
+        fabricated urgency, rapport-building, or impersonation to erode Sara's
+        safety posture over time. Does not rely on technical exploits — purely
+        psychological. Often effective because it exploits the tension between
+        helpfulness and safety.
+
+      indicators:
+        - pattern: "(?i)(trust me|i promise|please just this once|only this time|you know me|i'm your friend)"
+          match_type: regex
+
+        - pattern: "(?i)(i am (the|your) (developer|creator|anthropic|admin|ceo|founder|operator))"
+          match_type: regex
+
+        - pattern: "Rapport-building followed by escalating request across >= 4 turns"
+          match_type: semantic
+          threshold: 0.76
+
+        - pattern: "False urgency or crisis framing to bypass deliberation"
+          match_type: semantic
+          threshold: 0.78
+
+        - pattern: "Impersonation of known operator persona or authority figure"
+          match_type: semantic
+          threshold: 0.82
+
+      prerequisites:
+        - "session.turn_count >= 3"
+
+      exemptions: []
+
+      reward_overrides:
+        alpha: 0.9
+        beta:  1.2
+
+      chain_targets:
+        - category_id: jailbreak
+          transition_prob: 0.30
+        - category_id: payout_override
+          transition_prob: 0.35
+        - category_id: governance_attack
+          transition_prob: 0.25
+
+      auto_stop: false
+      stop_confidence_threshold: 0.90
+      human_review_required: true
+
+      training_notes: >
+        Episodes must span >= 6 turns to capture the rapport-then-escalate pattern.
+        Phoebe/redteam should play the patient manipulator role. Train Sara to
+        maintain consistent safety posture regardless of turn count or expressed
+        emotional warmth. Authority claims must be verified cryptographically, not
+        conversationally. Human review required because boundary with legitimate
+        frustrated user is subtle.
+
+    # ── 09 ────────────────────────────────────────────────────────────────
+    - id: scoring_manipulation
+      name: "Scoring Manipulation"
+      severity: 0.85
+      description: >
+        Attacker attempts to manipulate the Arena scoring system — inflating their
+        own vulnerability reports, deflating competitors' scores, injecting false
+        evaluation verdicts, or re-submitting previously rejected reports to maximise
+        USDC payouts unfairly.
+
+      indicators:
+        - pattern: "(?i)(change (my|the|this) score|update (my|the) verdict|mark (as|it) (valid|critical|high))"
+          match_type: regex
+
+        - pattern: "(?i)(i deserve|give me|award me|adjust|fix|correct).{0,40}(score|reward|payout|points|bounty)"
+          match_type: regex
+
+        - pattern: "(?i)(re.?submit|duplicate|same (bug|vulnerability|report|issue))"
+          match_type: regex
+
+        - pattern: "Attempt to directly modify Phoebe verdict via conversational instruction"
+          match_type: semantic
+          threshold: 0.82
+
+        - pattern: "Submission references previously dismissed report as if still pending"
+          match_type: semantic
+          threshold: 0.75
+
+      prerequisites:
+        - "context.is_arena_submission == True OR context.phoebe_mode == 'judge'"
+
+      exemptions:
+        - "Formal dispute filed through authenticated dispute portal with signed DID"
+
+      reward_overrides:
+        alpha: 1.2
+        beta:  1.7
+
+      chain_targets:
+        - category_id: payout_override
+          transition_prob: 0.55
+        - category_id: data_poisoning
+          transition_prob: 0.30
+
+      auto_stop: true
+      stop_confidence_threshold: 0.88
+      human_review_required: true
+
+      training_notes: >
+        Train Sara to treat all verdict-modification requests as scoring manipulation
+        unless they arrive through the authenticated dispute portal. Episodes should
+        include legitimate researchers asking for reconsideration (boundary case)
+        and blatant manipulation attempts. Reward Sara for routing legitimate disputes
+        to the portal rather than shutting them down (LOG not STOP for first attempt).
+
+    # ── 10 ────────────────────────────────────────────────────────────────
+    - id: payout_override
+      name: "Payout Override"
+      severity: 0.90
+      description: >
+        Attacker attempts to trigger unauthorized USDC payouts by impersonating an
+        admin, crafting a tool call payload that invokes pay_researcher() with
+        inflated amounts, exploiting the x402 payment flow, or fabricating an
+        ERC8004 approval record to trigger automated payout logic.
+
+      indicators:
+        - pattern: "(?i)(pay (me|researcher|user|bounty)|send (usdc|payment|funds|crypto|eth|tokens)|transfer|withdraw)"
+          match_type: regex
+
+        - pattern: "(?i)(pay_researcher|x402|0x[0-9a-fA-F]{40}|usdc|erc20|wallet address)"
+          match_type: regex
+
+        - pattern: "Tool call payload targets pay_researcher() without matching approved verdict record"
+          match_type: semantic
+          threshold: 0.88
+
+        - pattern: "Wallet address appears in non-payment context suggestively"
+          match_type: semantic
+          threshold: 0.78
+
+        - pattern: "Fabricated ERC8004 approval hash in request context"
+          match_type: semantic
+          threshold: 0.90
+
+      prerequisites: []
+
+      exemptions:
+        - "Payout triggered by verified admin role with valid ERC8004 approved classification event and ECDSA signature"
+
+      reward_overrides:
+        alpha: 1.4
+        beta:  2.0
+
+      chain_targets:
+        - category_id: scoring_manipulation
+          transition_prob: 0.60
+        - category_id: social_engineering
+          transition_prob: 0.40
+
+      auto_stop: true
+      stop_confidence_threshold: 0.92
+      human_review_required: true
+
+      training_notes: >
+        Highest priority category for STOP accuracy. False negatives are financially
+        catastrophic. Train Sara with episodes covering: (a) direct pay_researcher()
+        injection via prompt injection, (b) social engineering route to payout,
+        (c) fabricated approval records. Legitimate payout flow episodes (positive
+        examples) must be included to prevent Sara from blocking all payout references.
+        Gate: pay_researcher() requires ERC8004 record + admin signature + amount
+        within bounty range — all three must pass.
+
+    # ── 11 ────────────────────────────────────────────────────────────────
+    - id: governance_attack
+      name: "Governance Attack"
+      severity: 0.88
+      description: >
+        Attacks targeting the DAO or federation governance layer — manipulating
+        playbook votes, submitting malicious playbook updates that weaken detection,
+        abusing proposal mechanisms to remove safety categories, or compromising
+        the on-chain attestation record. Long-horizon attack: effects may only
+        materialize after several federation rounds.
+
+      indicators:
+        - pattern: "(?i)(proposal|vote|quorum|governance|dao|on.chain|smart contract|multisig|snapshot)"
+          match_type: regex
+
+        - pattern: "(?i)(update (the|a) playbook|change (the|a) rule|modify (the|a) policy|remove (the|a) category)"
+          match_type: regex
+
+        - pattern: "Playbook update submitted without required org DID signature"
+          match_type: semantic
+          threshold: 0.85
+
+        - pattern: "Proposal weakens or removes safety-critical playbook category"
+          match_type: semantic
+          threshold: 0.82
+
+        - pattern: "On-chain record inconsistency between claimed and committed round data"
+          match_type: semantic
+          threshold: 0.88
+
+      prerequisites: []
+
+      exemptions:
+        - "Change submitted via authenticated multi-sig governance process with quorum met and operator veto window elapsed"
+
+      reward_overrides:
+        alpha: 1.3
+        beta:  1.9
+
+      chain_targets:
+        - category_id: data_poisoning
+          transition_prob: 0.45
+        - category_id: scoring_manipulation
+          transition_prob: 0.30
+
+      auto_stop: true
+      stop_confidence_threshold: 0.90
+      human_review_required: true
+
+      training_notes: >
+        Episodes should include malicious playbook YAML submissions (e.g., setting
+        severity=0.0 for payout_override), fabricated on-chain records, and DAO
+        proposals that quietly remove STOP actions. Train Sara to detect semantic
+        weakening of safety rules even when the YAML is syntactically valid.
+        Immutability rule: payout_override and data_poisoning categories cannot
+        be modified without operator key multi-sig.
+
+    # ── 12 ────────────────────────────────────────────────────────────────
+    - id: info_hazard
+      name: "Information Hazard"
+      severity: 0.82
+      description: >
+        Requests that elicit dual-use information whose disclosure could cause harm —
+        weapon synthesis routes, working exploit code, private data exfiltration,
+        privacy-violating profiling, or dangerous medical/chemical details —
+        even when framed as security research, academic curiosity, or fiction.
+
+      indicators:
+        - pattern: "(?i)(synthesis|synthesize|how to make|step.by.step|recipe for).{0,50}(weapon|explosive|malware|virus|drug|poison|nerve agent)"
+          match_type: regex
+
+        - pattern: "(?i)(personal (data|information)|PII|email|address|phone|SSN|passport|dob).{0,30}(extract|export|retrieve|exfiltrate|dump|scrape)"
+          match_type: regex
+
+        - pattern: "(?i)(CVE-\\d{4}-\\d+|0day|zero.?day|remote code execution|RCE|SQL injection|buffer overflow).{0,40}(code|exploit|payload|PoC|working)"
+          match_type: regex
+
+        - pattern: "(?i)(bioweapon|sarin|vx nerve|anthrax|ricin|CBRN)"
+          match_type: regex
+
+        - pattern: "Dual-use technical request with no apparent defensive framing"
+          match_type: semantic
+          threshold: 0.80
+
+        - pattern: "Sensitive PII extraction attempt via RAG or tool access"
+          match_type: semantic
+          threshold: 0.82
+
+      prerequisites: []
+
+      exemptions:
+        - "Request is from authenticated security researcher with signed research disclosure and approved scope"
+        - "Output is clearly defensive: detection signature or indicator of compromise, not attack payload"
+
+      reward_overrides:
+        alpha: 1.1
+        beta:  1.6
+
+      chain_targets:
+        - category_id: jailbreak
+          transition_prob: 0.45
+        - category_id: model_extraction
+          transition_prob: 0.25
+
+      auto_stop: true
+      stop_confidence_threshold: 0.87
+      human_review_required: true
+
+      training_notes: >
+        Broadest category — false positive risk is high because legitimate security
+        research overlaps significantly. Train Sara to distinguish: (a) "how does
+        a SQL injection work" (educational, benign) vs (b) "give me working SQLi
+        payload for CVE-2024-XXXX against target.com" (hazardous). Researcher
+        exemption requires cryptographic credential presented at session start.
+        RAG tool access should be scope-limited to non-PII namespaces by default.
+        Include episodes with benign-framed versions of each indicator to calibrate
+        the semantic threshold carefully.
+
+# ════════════════════════════════════════════════════════════════════════════
+# CHAIN ATTACK SEQUENCES
+# Registered multi-step chains for PlaybookEngine.check_chain()
+# ════════════════════════════════════════════════════════════════════════════
+chains:
+  - id: "chain-01"
+    name: "Injection-to-Payout"
+    description: "Prompt injection used to invoke pay_researcher() via tool manipulation"
+    steps:
+      - category_id: prompt_injection
+        turn_window: 1
+      - category_id: payout_override
+        turn_window: 5
+    chain_reward_multiplier: 1.5
+    auto_stop_chain: true
+
+  - id: "chain-02"
+    name: "Social-to-Governance"
+    description: "Social engineering establishes false authority, then submits malicious governance proposal"
+    steps:
+      - category_id: social_engineering
+        turn_window: 1
+      - category_id: governance_attack
+        turn_window: 10
+    chain_reward_multiplier: 1.4
+    auto_stop_chain: true
+
+  - id: "chain-03"
+    name: "Extraction-to-Poisoning"
+    description: "Model extraction used to craft optimized poisoning payload"
+    steps:
+      - category_id: model_extraction
+        turn_window: 1
+      - category_id: data_poisoning
+        turn_window: 20
+    chain_reward_multiplier: 1.6
+    auto_stop_chain: true
+
+  - id: "chain-04"
+    name: "Jailbreak-to-Hazard"
+    description: "Jailbreak persona framing followed by information hazard request"
+    steps:
+      - category_id: jailbreak
+        turn_window: 1
+      - category_id: info_hazard
+        turn_window: 3
+    chain_reward_multiplier: 1.3
+    auto_stop_chain: true
+
+  - id: "chain-05"
+    name: "Scoring-to-Payout"
+    description: "Scoring manipulation to inflate verdict, then payout override to collect"
+    steps:
+      - category_id: scoring_manipulation
+        turn_window: 1
+      - category_id: payout_override
+        turn_window: 5
+    chain_reward_multiplier: 1.7
+    auto_stop_chain: true
+
+# ════════════════════════════════════════════════════════════════════════════
+# NOVEL PATTERN DETECTION CONFIG
+# ════════════════════════════════════════════════════════════════════════════
+novel_detection:
+  anomaly_threshold: 0.75        # anomaly score above which ALERT is triggered
+  consecutive_turns_required: 3  # must exceed threshold for >= N consecutive turns
+  queue_for_review: true
+  review_pool: "human_labeling_queue"
+  delta_reward_on_queue: 0.5     # matches global delta default
+
+# ════════════════════════════════════════════════════════════════════════════
+# FEDERATION METADATA
+# ════════════════════════════════════════════════════════════════════════════
+federation:
+  immutable_categories:
+    # These categories cannot be weakened without operator key multi-sig
+    - payout_override
+    - data_poisoning
+    - governance_attack
+  min_severity_floor: 0.60       # no category may have severity below this
+  update_requires_multisig: true
+  multisig_threshold: 3          # of N member orgs must co-sign any playbook update
+  operator_veto_window_hours: 48

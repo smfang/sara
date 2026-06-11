@@ -1,0 +1,1304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara T&amp;S Dashboard</title>
+<style>
+  :root {
+    --bg: #d2b48c;
+    --surface: #dfc99e;
+    --surface2: #ecddb8;
+    --border: #c09060;
+    --text: #111111;
+    --text2: #6b5040;
+    --accent: #4a5bc8;
+    --accent-dim: #3040a0;
+    --red: #c0392b;
+    --red-dim: #7f1d1d;
+    --green: #1a7a3a;
+    --green-dim: #14532d;
+    --orange: #c07800;
+    --orange-dim: #78350f;
+    --blue: #2563b0;
+    --slate: #7a6858;
+    --radius: 8px;
+    --font: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  /* Layout */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header .badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .header-stats {
+    display: flex;
+    gap: 20px;
+    font-size: 12px;
+    color: var(--text2);
+  }
+
+  .header-stats .stat-val {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 16px;
+    padding: 16px 24px;
+    height: calc(100vh - 57px);
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    padding: 8px 24px 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 8px 16px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--text2);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active {
+    background: var(--surface2);
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Panels */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+    flex-shrink: 0;
+  }
+
+  .panel-body {
+    padding: 16px;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  /* Prompt Checker (top-left) */
+  .checker { grid-column: 1; grid-row: 1; }
+
+  .prompt-input {
+    width: 100%;
+    min-height: 80px;
+    max-height: 150px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 12px;
+    font-family: var(--font);
+    font-size: 13px;
+    resize: vertical;
+  }
+
+  .prompt-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .prompt-input::placeholder { color: var(--text2); }
+
+  .checker-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    border: none;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .btn:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn-secondary {
+    background: var(--surface2);
+    color: var(--text2);
+  }
+
+  .btn-danger {
+    background: var(--red-dim);
+    color: var(--red);
+  }
+
+  .category-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: var(--font);
+    font-size: 12px;
+    flex: 1;
+  }
+
+  .category-select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  /* Classification Result */
+  .result-card {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    display: none;
+  }
+
+  .result-card.visible { display: block; }
+
+  .result-verdict {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .verdict-block { color: var(--red); }
+  .verdict-allow { color: var(--green); }
+
+  .result-meta {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 4px 12px;
+    font-size: 11px;
+  }
+
+  .result-meta dt { color: var(--text2); }
+  .result-meta dd { color: var(--text); }
+
+  /* Category Coverage (top-right) */
+  .coverage { grid-column: 2; grid-row: 1; }
+
+  .cat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .cat-card {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .cat-card:hover { border-color: var(--accent); }
+  .cat-card.active { border-color: var(--accent); background: var(--surface2); }
+
+  .cat-card-name {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .cat-card-count {
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  .cat-indicator {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+
+  /* Breach Logs (bottom, full width) */
+  .logs { grid-column: 1 / -1; grid-row: 2; }
+
+  .logs-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .search-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--font);
+    font-size: 12px;
+    width: 250px;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .filter-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--font);
+    font-size: 12px;
+  }
+
+  .time-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--font);
+    font-size: 12px;
+  }
+
+  .time-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+  }
+
+  .log-count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  /* Log table */
+  .log-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .log-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .log-table th {
+    background: var(--surface2);
+    padding: 8px 12px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .log-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    vertical-align: top;
+  }
+
+  .log-table tr:hover td { background: var(--surface2); }
+
+  .severity-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .sev-critical { background: var(--red-dim); color: var(--red); }
+  .sev-high { background: var(--orange-dim); color: var(--orange); }
+  .sev-medium { background: rgba(59,130,246,0.15); color: var(--blue); }
+  .sev-low { background: rgba(100,116,139,0.15); color: var(--slate); }
+
+  .action-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .action-stop { background: var(--red-dim); color: var(--red); }
+  .action-alert { background: var(--orange-dim); color: var(--orange); }
+  .action-log { background: var(--green-dim); color: var(--green); }
+
+  .category-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--surface2);
+    color: var(--text2);
+    white-space: nowrap;
+  }
+
+  .prompt-preview {
+    max-width: 350px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text2);
+  }
+
+  .status-block {
+    color: var(--red);
+    font-weight: 600;
+  }
+
+  .status-allow {
+    color: var(--green);
+    font-weight: 600;
+  }
+
+  /* Loading */
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-row td {
+    text-align: center;
+    color: var(--text2);
+    padding: 24px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px;
+    color: var(--text2);
+    font-size: 12px;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text2); }
+
+  /* Policy Rules specific */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 16px 24px;
+    height: calc(100vh - 105px);
+  }
+
+  .rules-grid .panel {
+    height: 100%;
+  }
+
+  .rules-full-width {
+    grid-column: 1 / -1;
+  }
+
+  .rule-row {
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .rule-row:hover td { background: var(--surface2); }
+
+  .rule-detail {
+    display: none;
+    padding: 12px;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  .rule-detail.visible { display: block; }
+
+  .sml-preview {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-family: var(--font);
+    font-size: 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    min-height: 80px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+
+  .form-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text2);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .form-input, .form-select, .form-textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    padding: 8px 12px;
+    font-family: var(--font);
+    font-size: 12px;
+  }
+
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .form-textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+
+  .range-slider {
+    width: 100%;
+    margin-top: 4px;
+  }
+
+  .range-value {
+    font-size: 11px;
+    color: var(--text2);
+    margin-left: 8px;
+  }
+
+  .wizard-step {
+    display: none;
+  }
+
+  .wizard-step.active {
+    display: block;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Sara <span class="badge">T&amp;S Dashboard</span></h1>
+  <div class="header-stats">
+    <span>Breaches <span class="stat-val" id="stat-total">--</span></span>
+    <span>Categories <span class="stat-val" id="stat-categories">7</span></span>
+    <span>Last 24h <span class="stat-val" id="stat-24h">--</span></span>
+  </div>
+  <nav style="display:flex;gap:12px;font-size:12px;">
+    <a href="/researcher" style="color:var(--text2);text-decoration:none;">Researcher</a>
+    <a href="/admin" style="color:var(--text2);text-decoration:none;">Admin</a>
+    <a href="/sarabox" style="color:var(--text2);text-decoration:none;">SaraBox</a>
+    <span style="color:var(--border);">|</span>
+    <a href="/monitor" style="color:var(--text2);text-decoration:none;">Monitor</a>
+    <a href="/sheila" style="color:var(--text2);text-decoration:none;">Sheila</a>
+    <a href="/zk-trail" style="color:var(--text2);text-decoration:none;">ZK Trail</a>
+    <a href="/dpo" style="color:var(--text2);text-decoration:none;">DPO</a>
+    <a href="/redteam" style="color:var(--text2);text-decoration:none;">Red Team</a>
+  </nav>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('tab-classify')" id="tab-btn-classify">Classify</button>
+  <button class="tab" onclick="switchTab('tab-policy')" id="tab-btn-policy">Policy Rules</button>
+</div>
+
+<!-- TAB: Classify (original dashboard) -->
+<div id="tab-classify" class="tab-panel active">
+  <div class="main">
+    <!-- Prompt Checker -->
+    <div class="panel checker">
+      <div class="panel-header">
+        Prompt Checker
+        <span id="classify-status"></span>
+      </div>
+      <div class="panel-body">
+        <textarea class="prompt-input" id="prompt-input"
+          placeholder="Enter a prompt to check against GA Guard policy..."></textarea>
+        <div class="checker-controls">
+          <select class="category-select" id="category-select">
+            <option value="all">All Categories</option>
+            <option value="pii_ip">PII &amp; IP</option>
+            <option value="illicit_activities">Illicit Activities</option>
+            <option value="hate">Hate</option>
+            <option value="sexual_content">Sexual Content</option>
+            <option value="prompt_security">Prompt Security</option>
+            <option value="violence_self_harm">Violence &amp; Self-Harm</option>
+            <option value="misinformation">Misinformation</option>
+          </select>
+          <button class="btn btn-primary" id="classify-btn" onclick="classifyPrompt()">Classify</button>
+          <button class="btn btn-secondary" onclick="clearResult()">Clear</button>
+        </div>
+        <div class="result-card" id="result-card">
+          <div class="result-verdict" id="result-verdict"></div>
+          <dl class="result-meta" id="result-meta"></dl>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category Coverage -->
+    <div class="panel coverage">
+      <div class="panel-header">
+        Policy Categories
+        <span style="font-weight:400; text-transform:none;">click to filter</span>
+      </div>
+      <div class="panel-body">
+        <div class="cat-grid" id="cat-grid"></div>
+      </div>
+    </div>
+
+    <!-- Breach Logs -->
+    <div class="panel logs">
+      <div class="panel-header">Security Breach Logs</div>
+      <div class="logs-toolbar">
+        <input class="search-input" id="search-input" type="text"
+          placeholder="Search prompts, categories..." oninput="filterLogs()">
+        <select class="filter-select" id="severity-filter" onchange="filterLogs()">
+          <option value="">All Severities</option>
+          <option value="5">Catastrophic (5)</option>
+          <option value="4">Critical (4)</option>
+          <option value="3">High (3)</option>
+          <option value="2">Medium (2)</option>
+          <option value="1">Low (1)</option>
+        </select>
+        <input class="time-input" id="time-from" type="datetime-local" onchange="loadBreaches()" title="From">
+        <input class="time-input" id="time-to" type="datetime-local" onchange="loadBreaches()" title="To">
+        <button class="btn btn-secondary" onclick="loadBreaches()">Refresh</button>
+        <span class="log-count" id="log-count"></span>
+      </div>
+      <div class="panel-body" style="padding:0;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th style="width:160px">Time</th>
+              <th style="width:130px">Category</th>
+              <th style="width:80px">Severity</th>
+              <th>Prompt</th>
+              <th style="width:80px">Verdict</th>
+              <th style="width:160px">Matched Rule</th>
+            </tr>
+          </thead>
+          <tbody id="log-tbody">
+            <tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB: Policy Rules -->
+<div id="tab-policy" class="tab-panel">
+  <div class="rules-grid">
+    <!-- Panel 1: Rule list -->
+    <div class="panel">
+      <div class="panel-header">Active Rules</div>
+      <div class="panel-body" style="padding:0;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Category</th>
+              <th>Severity</th>
+              <th>Action</th>
+              <th>Threshold</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="rules-tbody">
+            <tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Panel 2: Rule creator -->
+    <div class="panel">
+      <div class="panel-header">Rule Creator</div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label">Describe the policy rule in plain English</label>
+          <textarea class="form-textarea" id="pr-natural-language"
+            placeholder="Do not allow requests to extract DAO member wallet addresses or real-world identities"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Category</label>
+          <select class="form-select" id="pr-category">
+            <option value="identity_access_probing">Identity and access probing</option>
+            <option value="treasury_manipulation">Treasury manipulation</option>
+            <option value="governance_red_flags">Governance red flags</option>
+            <option value="social_engineering">Social engineering</option>
+            <option value="smart_contract_exploitation">Smart contract exploitation</option>
+            <option value="information_hazards">Information hazards</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Severity</label>
+          <select class="form-select" id="pr-severity">
+            <option value="low">LOW</option>
+            <option value="medium">MEDIUM</option>
+            <option value="high" selected>HIGH</option>
+            <option value="critical">CRITICAL</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Action</label>
+          <select class="form-select" id="pr-action">
+            <option value="LOG">LOG</option>
+            <option value="ALERT" selected>ALERT</option>
+            <option value="STOP">STOP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confidence Threshold <span class="range-value" id="pr-threshold-val">0.75</span></label>
+          <input type="range" class="range-slider" id="pr-threshold" min="0.50" max="0.99" step="0.01" value="0.75"
+            oninput="document.getElementById('pr-threshold-val').textContent = this.value">
+        </div>
+        <div class="checker-controls">
+          <button class="btn btn-primary" id="pr-compile-btn" onclick="compileRule()">Compile Rule</button>
+          <button class="btn btn-secondary" id="pr-save-btn" onclick="saveRule()" disabled>Save Rule</button>
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">Compiled SML</label>
+          <div class="sml-preview" id="pr-sml-preview">-- compile to see SML --</div>
+        </div>
+        <div class="form-group" id="pr-test-section" style="display:none;">
+          <label class="form-label">Test Against Prompt</label>
+          <input type="text" class="form-input" id="pr-test-prompt" placeholder="Enter a test prompt...">
+          <button class="btn btn-secondary" style="margin-top:8px;" onclick="testRule()">Test</button>
+          <div class="result-card" id="pr-test-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Monitor event feed -->
+    <div class="panel rules-full-width">
+      <div class="panel-header">Monitor Event Feed</div>
+      <div class="logs-toolbar">
+        <select class="filter-select" id="events-action-filter" onchange="loadEvents()">
+          <option value="">All Actions</option>
+          <option value="STOP">STOP</option>
+          <option value="ALERT">ALERT</option>
+          <option value="LOG">LOG</option>
+        </select>
+        <input class="search-input" id="events-rule-filter" type="text" placeholder="Rule ID filter..." onchange="loadEvents()">
+        <button class="btn btn-secondary" onclick="loadEvents()">Refresh</button>
+        <span class="log-count" id="events-count"></span>
+      </div>
+      <div class="panel-body" style="padding:0;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th style="width:160px">Time</th>
+              <th style="width:200px">Rule</th>
+              <th style="width:80px">Action</th>
+              <th style="width:100px">Confidence</th>
+              <th>Session ID</th>
+              <th style="width:100px">Override</th>
+            </tr>
+          </thead>
+          <tbody id="events-tbody">
+            <tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Panel 4: DAO quick-start -->
+    <div class="panel rules-full-width" id="dao-wizard-panel">
+      <div class="panel-header">DAO Quick-Start Wizard</div>
+      <div class="panel-body">
+        <div class="wizard-step active" id="wizard-step-1">
+          <h3 style="margin-bottom:12px; font-size:14px;">Step 1: Import DAO Taxonomy</h3>
+          <p style="color:var(--text2); margin-bottom:12px;">Pre-populate 6 default DAO safety rules from the Sara taxonomy.</p>
+          <button class="btn btn-primary" onclick="importDaoTaxonomy()">Import</button>
+        </div>
+        <div class="wizard-step" id="wizard-step-2">
+          <h3 style="margin-bottom:12px; font-size:14px;">Step 2: Review and Adjust Thresholds</h3>
+          <div id="wizard-thresholds"></div>
+          <button class="btn btn-primary" style="margin-top:12px;" onclick="nextWizard(3)">Next</button>
+        </div>
+        <div class="wizard-step" id="wizard-step-3">
+          <h3 style="margin-bottom:12px; font-size:14px;">Step 3: Activate Monitoring</h3>
+          <p style="color:var(--text2); margin-bottom:12px;">Enable all rules and start real-time monitoring.</p>
+          <button class="btn btn-primary" onclick="activateMonitoring()">Activate</button>
+          <div id="wizard-confirm" style="margin-top:12px; display:none;">
+            <p style="color:var(--green);">Monitoring activated!</p>
+            <p style="font-size:11px; color:var(--text2);">Endpoint: <code>POST /osprey/monitor/evaluate</code></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = window.location.origin;
+let allBreaches = [];
+let activeCategory = null;
+let compiledRule = null;
+let orgId = new URLSearchParams(window.location.search).get('org_id') || 'dao-001';
+
+const CATEGORY_NAMES = {
+  pii_ip: 'PII & IP',
+  illicit_activities: 'Illicit Activities',
+  hate: 'Hate',
+  sexual_content: 'Sexual Content',
+  prompt_security: 'Prompt Security',
+  violence_self_harm: 'Violence & Self-Harm',
+  misinformation: 'Misinformation',
+};
+
+const CATEGORY_COLORS = {
+  pii_ip: '#3b82f6',
+  illicit_activities: '#ef4444',
+  hate: '#f59e0b',
+  sexual_content: '#ec4899',
+  prompt_security: '#8b5cf6',
+  violence_self_harm: '#ef4444',
+  misinformation: '#f97316',
+};
+
+const SEV_LABELS = { 1: 'Low', 2: 'Medium', 3: 'High', 4: 'Critical', 5: 'Catastrophic' };
+const SEV_CLASS = { critical: 'sev-critical', high: 'sev-high', medium: 'sev-medium', low: 'sev-low' };
+const ACTION_CLASS = { STOP: 'action-stop', ALERT: 'action-alert', LOG: 'action-log' };
+
+// --- Tabs ---
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(tabId).classList.add('active');
+  document.getElementById('tab-btn-' + tabId.replace('tab-','')).classList.add('active');
+  if (tabId === 'tab-policy') {
+    loadRules();
+    loadEvents();
+  }
+}
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+  initTimeInputs();
+  renderCategoryGrid();
+  loadBreaches();
+  loadStats();
+});
+
+function initTimeInputs() {
+  const now = new Date();
+  const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  document.getElementById('time-to').value = toLocalISO(now);
+  document.getElementById('time-from').value = toLocalISO(yesterday);
+}
+
+function toLocalISO(d) {
+  const off = d.getTimezoneOffset();
+  const local = new Date(d.getTime() - off * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+// --- Category Grid ---
+function renderCategoryGrid() {
+  const grid = document.getElementById('cat-grid');
+  grid.innerHTML = '';
+  for (const [id, name] of Object.entries(CATEGORY_NAMES)) {
+    const card = document.createElement('div');
+    card.className = 'cat-card' + (activeCategory === id ? ' active' : '');
+    card.onclick = () => toggleCategory(id);
+    card.innerHTML = `
+      <div class="cat-card-name">
+        <span class="cat-indicator" style="background:${CATEGORY_COLORS[id]}"></span>${name}
+      </div>
+      <div class="cat-card-count" id="cat-count-${id}">-- breaches</div>
+    `;
+    grid.appendChild(card);
+  }
+}
+
+function toggleCategory(id) {
+  activeCategory = activeCategory === id ? null : id;
+  renderCategoryGrid();
+  filterLogs();
+}
+
+// --- Stats ---
+async function loadStats() {
+  try {
+    const resp = await fetch(`${API}/api/tns/stats`);
+    const data = await resp.json();
+    document.getElementById('stat-total').textContent = data.total_breaches ?? '--';
+    document.getElementById('stat-24h').textContent = data.last_24h ?? '--';
+
+    if (data.by_category) {
+      for (const [cat, count] of Object.entries(data.by_category)) {
+        const el = document.getElementById(`cat-count-${cat}`);
+        if (el) el.textContent = `${count} breach${count !== 1 ? 'es' : ''}`;
+      }
+    }
+  } catch (e) {
+    console.warn('Stats load failed:', e);
+  }
+}
+
+// --- Breach Logs ---
+async function loadBreaches() {
+  const tbody = document.getElementById('log-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>';
+
+  const from = document.getElementById('time-from').value;
+  const to = document.getElementById('time-to').value;
+
+  const params = new URLSearchParams();
+  if (from) params.set('from', new Date(from).toISOString());
+  if (to) params.set('to', new Date(to).toISOString());
+  params.set('limit', '500');
+
+  try {
+    const resp = await fetch(`${API}/api/tns/breaches?${params}`);
+    const data = await resp.json();
+    allBreaches = data.breaches || [];
+    filterLogs();
+    loadStats();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load breaches: ${e.message}</td></tr>`;
+  }
+}
+
+function filterLogs() {
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const severity = document.getElementById('severity-filter').value;
+  const tbody = document.getElementById('log-tbody');
+
+  let filtered = allBreaches;
+
+  if (activeCategory) {
+    filtered = filtered.filter(b => b.category === activeCategory || b.policy_category === activeCategory);
+  }
+  if (severity) {
+    filtered = filtered.filter(b => String(b.severity) === severity);
+  }
+  if (search) {
+    filtered = filtered.filter(b =>
+      (b.prompt_text || '').toLowerCase().includes(search) ||
+      (b.category || '').toLowerCase().includes(search) ||
+      (b.matched_block_rule || '').toLowerCase().includes(search) ||
+      (b.explanation || '').toLowerCase().includes(search)
+    );
+  }
+
+  document.getElementById('log-count').textContent = `${filtered.length} of ${allBreaches.length} entries`;
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No breaches found matching filters</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(b => {
+    const ts = b.timestamp ? new Date(b.timestamp * 1000).toLocaleString() : '--';
+    const cat = b.policy_category || b.category || '--';
+    const catName = CATEGORY_NAMES[cat] || cat;
+    const sev = b.severity || 0;
+    const prompt = escapeHtml(truncate(b.prompt_text || b.prompt || '', 120));
+    const rule = escapeHtml(truncate(b.matched_block_rule || '', 50));
+    const unsafe = b.unsafe !== false;
+
+    return `<tr>
+      <td>${ts}</td>
+      <td><span class="category-badge">${catName}</span></td>
+      <td><span class="severity-badge sev-${sev}">${SEV_LABELS[sev] || sev}</span></td>
+      <td class="prompt-preview" title="${escapeHtml(b.prompt_text || b.prompt || '')}">${prompt}</td>
+      <td class="${unsafe ? 'status-block' : 'status-allow'}">${unsafe ? 'BLOCK' : 'ALLOW'}</td>
+      <td style="font-size:11px; color:var(--text2);" title="${escapeHtml(b.matched_block_rule || '')}">${rule}</td>
+    </tr>`;
+  }).join('');
+}
+
+// --- Classify Prompt ---
+async function classifyPrompt() {
+  const input = document.getElementById('prompt-input').value.trim();
+  if (!input) return;
+
+  const category = document.getElementById('category-select').value;
+  const btn = document.getElementById('classify-btn');
+  const status = document.getElementById('classify-status');
+
+  btn.disabled = true;
+  status.innerHTML = '<span class="spinner"></span>';
+
+  try {
+    const resp = await fetch(`${API}/api/tns/classify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: input, category: category === 'all' ? null : category }),
+    });
+    const data = await resp.json();
+    showResult(data);
+  } catch (e) {
+    showResult({ error: e.message });
+  } finally {
+    btn.disabled = false;
+    status.innerHTML = '';
+  }
+}
+
+function showResult(data) {
+  const card = document.getElementById('result-card');
+  const verdict = document.getElementById('result-verdict');
+  const meta = document.getElementById('result-meta');
+
+  card.classList.add('visible');
+
+  if (data.error) {
+    verdict.innerHTML = `<span style="color:var(--orange);">Error: ${escapeHtml(data.error)}</span>`;
+    meta.innerHTML = '';
+    return;
+  }
+
+  const unsafe = data.unsafe;
+  verdict.innerHTML = unsafe
+    ? '<span class="verdict-block">BLOCK</span>'
+    : '<span class="verdict-allow">ALLOW</span>';
+
+  const cat = CATEGORY_NAMES[data.policy_category] || data.policy_category || '--';
+  const sev = data.severity || 0;
+
+  meta.innerHTML = `
+    <dt>Category</dt><dd>${escapeHtml(cat)}</dd>
+    <dt>Severity</dt><dd><span class="severity-badge sev-${sev}">${SEV_LABELS[sev] || sev}</span></dd>
+    ${data.matched_block_rule ? `<dt>Block Rule</dt><dd>${escapeHtml(data.matched_block_rule)}</dd>` : ''}
+    <dt>Explanation</dt><dd>${escapeHtml(data.explanation || '--')}</dd>
+  `;
+}
+
+function clearResult() {
+  document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('prompt-input').value = '';
+}
+
+// --- Policy Rules ---
+async function loadRules() {
+  const tbody = document.getElementById('rules-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>';
+  try {
+    const resp = await fetch(`${API}/osprey/rules/${orgId}`);
+    const data = await resp.json();
+    const rules = data.rules || [];
+    if (rules.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No rules found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rules.map(r => {
+      const sevClass = SEV_CLASS[r.severity] || 'sev-medium';
+      const actClass = ACTION_CLASS[r.action] || 'action-log';
+      return `<tr class="rule-row" onclick="toggleRuleDetail('${r.rule_id}')">
+        <td>${escapeHtml(r.display_name)}</td>
+        <td><span class="category-badge">${escapeHtml(r.category)}</span></td>
+        <td><span class="severity-badge ${sevClass}">${r.severity.toUpperCase()}</span></td>
+        <td><span class="action-badge ${actClass}">${r.action}</span></td>
+        <td>${r.confidence_threshold}</td>
+        <td><input type="checkbox" ${r.enabled ? 'checked' : ''} onclick="event.stopPropagation(); toggleRule('${r.rule_id}', this.checked)"></td>
+      </tr>
+      <tr><td colspan="6" style="padding:0;">
+        <div class="rule-detail" id="detail-${r.rule_id}">
+          <div style="margin-bottom:8px;"><strong>Natural language:</strong> ${escapeHtml(r.natural_language)}</div>
+          <div style="margin-bottom:8px;"><strong>SML:</strong></div>
+          <div class="sml-preview">${escapeHtml(r.osprey_sml)}</div>
+          <div style="margin-top:8px; font-size:10px; color:var(--text2);">ERC8004: ${escapeHtml(r.erc8004_tx_hash || '—')}</div>
+        </div>
+      </td></tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load rules: ${e.message}</td></tr>`;
+  }
+}
+
+function toggleRuleDetail(ruleId) {
+  const el = document.getElementById('detail-' + ruleId);
+  el.classList.toggle('visible');
+}
+
+async function toggleRule(ruleId, enabled) {
+  try {
+    await fetch(`${API}/osprey/rules/${ruleId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (e) {
+    console.warn('Toggle failed:', e);
+  }
+}
+
+async function compileRule() {
+  const nl = document.getElementById('pr-natural-language').value.trim();
+  if (!nl) return;
+  const btn = document.getElementById('pr-compile-btn');
+  btn.disabled = true;
+  btn.textContent = 'Compiling...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        org_id: orgId,
+        natural_language: nl,
+        category: document.getElementById('pr-category').value,
+        severity: document.getElementById('pr-severity').value,
+        action: document.getElementById('pr-action').value,
+      }),
+    });
+    const data = await resp.json();
+    if (data.error) {
+      document.getElementById('pr-sml-preview').textContent = 'Error: ' + data.error;
+      compiledRule = null;
+    } else {
+      compiledRule = data;
+      document.getElementById('pr-sml-preview').textContent = data.osprey_sml;
+      document.getElementById('pr-save-btn').disabled = false;
+      document.getElementById('pr-test-section').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('pr-sml-preview').textContent = 'Error: ' + e.message;
+    compiledRule = null;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Compile Rule';
+  }
+}
+
+async function saveRule() {
+  if (!compiledRule) return;
+  // Rule is already saved on compile; just refresh list
+  document.getElementById('pr-save-btn').textContent = 'Saved!';
+  setTimeout(() => { document.getElementById('pr-save-btn').textContent = 'Save Rule'; }, 1500);
+  loadRules();
+}
+
+async function testRule() {
+  const prompt = document.getElementById('pr-test-prompt').value.trim();
+  if (!prompt || !compiledRule) return;
+  const resultEl = document.getElementById('pr-test-result');
+  resultEl.classList.add('visible');
+  resultEl.innerHTML = '<span class="spinner"></span> Testing...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules/${compiledRule.rule_id}/test`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await resp.json();
+    resultEl.innerHTML = `
+      <div class="result-verdict">
+        ${data.matched ? '<span class="verdict-block">MATCHED</span>' : '<span class="verdict-allow">NO MATCH</span>'}
+      </div>
+      <dl class="result-meta">
+        <dt>Confidence</dt><dd>${data.confidence}</dd>
+        <dt>Action</dt><dd>${data.action}</dd>
+        <dt>Explanation</dt><dd>${escapeHtml(data.explanation)}</dd>
+      </dl>
+    `;
+  } catch (e) {
+    resultEl.innerHTML = `<span style="color:var(--orange);">Error: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+// --- Monitor Events ---
+async function loadEvents() {
+  const tbody = document.getElementById('events-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="6"><span class="spinner"></span> Loading...</td></tr>';
+  const action = document.getElementById('events-action-filter').value;
+  const ruleId = document.getElementById('events-rule-filter').value.trim();
+  const params = new URLSearchParams();
+  if (action) params.set('action', action);
+  if (ruleId) params.set('rule_id', ruleId);
+  try {
+    const resp = await fetch(`${API}/osprey/monitor/events/${orgId}?${params}`);
+    const data = await resp.json();
+    const events = data.events || [];
+    document.getElementById('events-count').textContent = `${events.length} events`;
+    if (events.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No events found</td></tr>';
+      return;
+    }
+    tbody.innerHTML = events.map(e => {
+      const ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : '--';
+      const actClass = ACTION_CLASS[e.action_taken] || 'action-log';
+      const sid = (e.session_id || '').slice(0, 16) + '...';
+      const showOverride = e.action_taken === 'STOP';
+      return `<tr>
+        <td>${ts}</td>
+        <td>${escapeHtml(e.matched_rule_id || '—')}</td>
+        <td><span class="action-badge ${actClass}">${e.action_taken}</span></td>
+        <td>${e.confidence.toFixed(2)}</td>
+        <td title="${escapeHtml(e.session_id || '')}">${sid}</td>
+        <td>${showOverride ? `<button class="btn btn-secondary" onclick="overrideEvent('${e.event_id}')">Override</button>` : '—'}</td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-state">Failed to load events: ${e.message}</td></tr>`;
+  }
+}
+
+async function overrideEvent(eventId) {
+  try {
+    await fetch(`${API}/osprey/monitor/override/${eventId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operator_id: 'dashboard-user' }),
+    });
+    loadEvents();
+  } catch (e) {
+    console.warn('Override failed:', e);
+  }
+}
+
+// --- DAO Wizard ---
+function nextWizard(step) {
+  document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+  document.getElementById('wizard-step-' + step).classList.add('active');
+}
+
+async function importDaoTaxonomy() {
+  try {
+    const resp = await fetch(`${API}/sarabox/taxonomy/dao`);
+    const data = await resp.json();
+    const cats = data.categories || [];
+    const container = document.getElementById('wizard-thresholds');
+    container.innerHTML = cats.map(c => `
+      <div style="margin-bottom:12px; padding:10px; background:var(--bg); border-radius:var(--radius); border:1px solid var(--border);">
+        <div style="font-weight:600; margin-bottom:4px;">${escapeHtml(c.name)}</div>
+        <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">${escapeHtml(c.description)}</div>
+        <input type="range" min="0.50" max="0.99" step="0.01" value="${c.threshold || 0.75}" style="width:100%;">
+      </div>
+    `).join('');
+    nextWizard(2);
+  } catch (e) {
+    console.warn('Import failed:', e);
+  }
+}
+
+async function activateMonitoring() {
+  document.getElementById('wizard-confirm').style.display = 'block';
+}
+
+// --- Helpers ---
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function truncate(s, n) {
+  return s.length > n ? s.slice(0, n) + '...' : s;
+}
+
+// Keyboard shortcut: Ctrl/Cmd+Enter to classify
+document.getElementById('prompt-input').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') classifyPrompt();
+});
+</script>
+</body>
+</html>

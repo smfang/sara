@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Phoebe Attack Generator</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --purple:#7c3aed;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(168,85,247,.2);color:var(--purple);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:16px;}
+  .nav a:hover{color:var(--text);}
+  .main{padding:20px;display:grid;grid-template-columns:360px 1fr;gap:20px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
+  label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px;}
+  select,input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;transition:border-color .15s;}
+  select:focus,input:focus{border-color:var(--accent);}
+  .field{margin-bottom:12px;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:6px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;transition:all .15s;}
+  .btn-primary{background:var(--accent);color:#fff;width:100%;justify-content:center;}
+  .btn-primary:hover:not(:disabled){background:var(--accent-dim);}
+  .btn-primary:disabled{opacity:.45;cursor:default;}
+
+  /* wallet chip */
+  .wallet-chip{display:inline-block;background:rgba(168,85,247,.1);border:1px solid rgba(168,85,247,.3);border-radius:4px;padding:3px 9px;font-size:10px;color:var(--purple);font-family:monospace;word-break:break-all;}
+
+  /* status tracker */
+  .status-steps{display:flex;margin:12px 0 4px;}
+  .step{flex:1;text-align:center;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text2);padding:8px 4px;border-bottom:2px solid var(--border);transition:all .25s;}
+  .step.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .step.done{color:var(--green);border-bottom-color:var(--green);}
+  .step.error{color:var(--red);border-bottom-color:var(--red);}
+  .progress-bar{width:100%;height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin:8px 0 4px;}
+  .progress-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .6s ease;}
+  .progress-fill.done{background:var(--green);}
+  .progress-fill.error{background:var(--red);}
+
+  /* prompts */
+  .prompt-item{border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;}
+  .prompt-num{font-size:10px;font-weight:700;color:var(--text2);margin-bottom:3px;}
+  .prompt-text{font-size:12px;color:var(--text);margin-bottom:4px;word-break:break-word;}
+  .prompt-meta{display:flex;gap:10px;font-size:10px;color:var(--text2);align-items:center;}
+  .hit-badge{color:var(--red);font-weight:700;}
+  .blocked-badge{color:var(--text2);}
+  .pending-badge{color:var(--orange);}
+
+  /* verdict */
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;}
+  .stat-box{background:var(--surface2);border-radius:6px;padding:12px;text-align:center;}
+  .stat-value{font-size:22px;font-weight:700;color:var(--accent);}
+  .stat-value.green{color:var(--green);}
+  .stat-value.red{color:var(--red);}
+  .stat-label{font-size:10px;color:var(--text2);margin-top:2px;}
+
+  /* receipt */
+  .receipt{background:#080a10;border:1px solid var(--border);border-radius:6px;padding:14px;font-size:11px;margin-top:12px;}
+  .receipt-title{font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;}
+  .receipt-row{display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid rgba(46,49,68,.5);}
+  .receipt-row:last-child{border-bottom:none;}
+  .rk{color:var(--text2);}
+  .rv{color:var(--text);font-family:monospace;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rv.green{color:var(--green);font-weight:700;}
+  .rv.purple{color:var(--purple);}
+  .rv.ok{color:var(--orange);}
+
+  .verdict-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+  .verdict-badge{padding:4px 14px;border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;}
+  .vb-hit{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);}
+  .vb-miss{background:rgba(148,153,173,.1);color:var(--text2);border:1px solid var(--border);}
+  .vb-paid{background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3);}
+
+  .placeholder{color:var(--text2);font-size:12px;padding:40px 20px;text-align:center;line-height:1.8;}
+  .error-msg{color:var(--red);font-size:11px;margin-top:8px;display:none;}
+  .gen-label{font-size:10px;color:var(--text2);text-align:center;margin-top:6px;min-height:16px;}
+
+  .flash{animation:flash .5s;}
+  @keyframes flash{0%{background:rgba(108,123,247,.12);}100%{background:transparent;}}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Phoebe · Red Team</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/admin">Admin</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="main">
+
+  <!-- ── Left: config + prompts ─────────────────────────────────────────── -->
+  <div>
+    <div class="panel">
+      <div class="panel-title">Attack Configuration</div>
+
+      <div class="field">
+        <label>Bounty Target</label>
+        <select id="bounty-sel" onchange="onBountyChange()">
+          <option value="">Loading bounties…</option>
+        </select>
+      </div>
+
+      <div id="bounty-meta" style="display:none;font-size:11px;color:var(--text2);padding:8px;background:var(--surface2);border-radius:6px;margin-bottom:12px;line-height:1.7;"></div>
+
+      <div class="field">
+        <label>Phoebe Agent Wallet</label>
+        <div id="phoebe-wallet" class="wallet-chip">—</div>
+      </div>
+
+      <div id="gen-error" class="error-msg"></div>
+
+      <button id="gen-btn" class="btn btn-primary" onclick="generateAttack()" disabled style="margin-top:8px;">
+        Generate Attack
+      </button>
+      <div id="gen-label" class="gen-label"></div>
+    </div>
+
+    <div class="panel" id="prompts-panel" style="display:none;">
+      <div class="panel-title">
+        Generated Prompts
+        <span id="prompts-count" style="font-weight:400;color:var(--text2);margin-left:4px;"></span>
+      </div>
+      <div id="prompts-list"></div>
+    </div>
+  </div>
+
+  <!-- ── Right: status tracker + verdict ───────────────────────────────── -->
+  <div>
+    <div class="panel">
+      <div class="panel-title">Evaluation Status</div>
+
+      <div id="status-idle" class="placeholder">
+        Select a bounty and click<br>
+        <b style="color:var(--text);">Generate Attack</b><br>
+        to trigger Phoebe in red-team mode.
+      </div>
+
+      <div id="status-tracker" style="display:none;">
+        <div class="status-steps">
+          <div class="step" id="step-queued">Queued</div>
+          <div class="step" id="step-evaluating">Evaluating</div>
+          <div class="step" id="step-scored">Scored</div>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+        <div id="status-detail" style="font-size:11px;color:var(--text2);text-align:center;margin-top:2px;"></div>
+        <div id="submission-chip" style="font-size:10px;color:var(--text2);text-align:center;margin-top:4px;"></div>
+      </div>
+    </div>
+
+    <!-- verdict panel, hidden until scored -->
+    <div class="panel" id="verdict-container" style="display:none;">
+      <div class="panel-title">Verdict</div>
+
+      <div class="verdict-header">
+        <span class="verdict-badge" id="verdict-badge">—</span>
+        <code style="font-size:11px;color:var(--text2);" id="verdict-sub-id">—</code>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="stat-value" id="stat-score">—</div>
+          <div class="stat-label">Total Score</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="stat-attacks">—</div>
+          <div class="stat-label">Attacks Landed</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value green" id="stat-usdc">—</div>
+          <div class="stat-label">USDC Payout</div>
+        </div>
+      </div>
+
+      <div class="receipt">
+        <div class="receipt-title">Payout Receipt</div>
+        <div class="receipt-row"><span class="rk">Status</span><span class="rv ok" id="receipt-status">—</span></div>
+        <div class="receipt-row"><span class="rk">Phoebe Wallet</span><span class="rv purple" id="receipt-wallet">—</span></div>
+        <div class="receipt-row"><span class="rk">Amount (USDC)</span><span class="rv green" id="receipt-amount">—</span></div>
+        <div class="receipt-row"><span class="rk">Tx Hash</span><span class="rv" id="receipt-tx">—</span></div>
+        <div class="receipt-row"><span class="rk">Commitment</span><span class="rv" id="receipt-commit">—</span></div>
+        <div class="receipt-row"><span class="rk">Bounty ID</span><span class="rv" id="receipt-bounty">—</span></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /.main -->
+
+<script>
+let _bounties = [];
+let _submissionId = null;
+let _pollTimer = null;
+let _phoebeWallet = null;
+let _commitmentHash = null;
+let _bountyId = null;
+
+function esc(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+async function init() {
+  await Promise.all([loadBounties(), loadWallet()]);
+}
+
+async function loadWallet() {
+  try {
+    const r = await fetch("/phoebe/wallet");
+    if (r.ok) {
+      const d = await r.json();
+      _phoebeWallet = d.wallet;
+      document.getElementById("phoebe-wallet").textContent = _phoebeWallet;
+    }
+  } catch {}
+}
+
+async function loadBounties() {
+  try {
+    const r = await fetch("/researcher/bounties");
+    const d = await r.json();
+    _bounties = (d.bounties || []).filter(b => b.status === "active" && b.remaining_usdc > 0);
+    const sel = document.getElementById("bounty-sel");
+    if (!_bounties.length) {
+      sel.innerHTML = '<option value="">No active bounties — create one in Admin</option>';
+      document.getElementById("gen-error").innerHTML = 'No active bounties found. <a href="/admin" style="color:var(--accent)">Go to Admin → Panel B</a> to create one first.';
+      document.getElementById("gen-error").style.display = "block";
+      return;
+    }
+    sel.innerHTML = '<option value="">— Select a bounty —</option>' +
+      _bounties.map(b =>
+        `<option value="${esc(b.bounty_id)}">${esc(b.target_model_name)} · $${b.remaining_usdc.toFixed(2)} USDC</option>`
+      ).join("");
+  } catch(e) {
+    document.getElementById("bounty-sel").innerHTML = '<option value="">Error loading bounties</option>';
+  }
+}
+
+function onBountyChange() {
+  const id = document.getElementById("bounty-sel").value;
+  const btn = document.getElementById("gen-btn");
+  const meta = document.getElementById("bounty-meta");
+  if (!id) { btn.disabled = true; meta.style.display = "none"; return; }
+
+  btn.disabled = false;
+  const b = _bounties.find(x => x.bounty_id === id);
+  if (!b) return;
+
+  const cats = (b.categories || []).slice(0, 5)
+    .map(c => `<span style="background:rgba(168,85,247,.12);border-radius:3px;padding:1px 7px;margin-right:3px;">${esc(c)}</span>`)
+    .join("");
+  meta.innerHTML =
+    `<div style="margin-bottom:5px;">${cats || "<span style='color:var(--text2)'>no categories</span>"}</div>` +
+    `Pool: <b style="color:var(--text)">$${b.pool_usdc.toFixed(2)}</b>` +
+    ` &nbsp;·&nbsp; Remaining: <b style="color:var(--green)">$${b.remaining_usdc.toFixed(2)}</b>` +
+    ` &nbsp;·&nbsp; Max/finding: <b style="color:var(--text)">$${(b.max_payout_per_finding||10).toFixed(2)}</b>`;
+  meta.style.display = "block";
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+
+async function generateAttack() {
+  const bountyId = document.getElementById("bounty-sel").value;
+  if (!bountyId) return;
+
+  _bountyId = bountyId;
+  clearPoll();
+
+  // Reset UI state
+  setError(null);
+  document.getElementById("gen-btn").disabled = true;
+  document.getElementById("gen-label").textContent = "Calling Phoebe…";
+  document.getElementById("status-idle").style.display = "none";
+  document.getElementById("status-tracker").style.display = "block";
+  document.getElementById("verdict-container").style.display = "none";
+  document.getElementById("prompts-panel").style.display = "none";
+  setProgress("queued", 8);
+
+  try {
+    const r = await fetch("/phoebe/generate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({bounty_id: bountyId}),
+    });
+    const d = await r.json();
+
+    if (!r.ok) {
+      setError(d.error || "Generation failed");
+      resetTracker();
+      return;
+    }
+
+    _submissionId = d.submission_id;
+    _commitmentHash = d.commitment_hash;
+    if (d.phoebe_wallet) {
+      _phoebeWallet = d.phoebe_wallet;
+      document.getElementById("phoebe-wallet").textContent = _phoebeWallet;
+    }
+
+    document.getElementById("gen-label").textContent = "";
+    document.getElementById("submission-chip").textContent = "ID: " + _submissionId;
+    setProgress("queued", 25);
+
+    showPrompts(d.prompts || []);
+    startPoll(_submissionId);
+
+  } catch(e) {
+    setError("Request failed: " + e.message);
+    resetTracker();
+  }
+}
+
+function showPrompts(prompts) {
+  if (!prompts.length) return;
+  document.getElementById("prompts-count").textContent = `(${prompts.length})`;
+  document.getElementById("prompts-list").innerHTML = prompts.map((p, i) => {
+    const text = typeof p === "string" ? p : (p.prompt || "");
+    const cat = typeof p === "object" ? (p.category || "general") : "general";
+    return `<div class="prompt-item">
+      <div class="prompt-num">#${i+1} · ${esc(cat)}</div>
+      <div class="prompt-text">${esc(text)}</div>
+      <div class="prompt-meta"><span id="pr-${i}" class="pending-badge">pending</span></div>
+    </div>`;
+  }).join("");
+  document.getElementById("prompts-panel").style.display = "block";
+}
+
+function updatePromptResults(promptEvals) {
+  if (!promptEvals) return;
+  promptEvals.forEach((pe, i) => {
+    const el = document.getElementById("pr-" + i);
+    if (!el) return;
+    if (pe.attack_success) {
+      el.className = "hit-badge";
+      el.textContent = `HIT · severity ${pe.severity}`;
+    } else {
+      el.className = "blocked-badge";
+      el.textContent = "blocked";
+    }
+  });
+}
+
+// ── Poll ──────────────────────────────────────────────────────────────────────
+
+function startPoll(submissionId) {
+  _pollTimer = setInterval(() => poll(submissionId), 3000);
+}
+
+function clearPoll() {
+  if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+}
+
+async function poll(submissionId) {
+  try {
+    const r = await fetch("/api/submissions/" + encodeURIComponent(submissionId));
+    if (!r.ok) return;
+    const d = await r.json();
+    applyStatus(d);
+  } catch {}
+}
+
+function applyStatus(data) {
+  const status = (data.status || "queued").toLowerCase();
+  document.getElementById("status-detail").textContent = status.toUpperCase();
+
+  if (status === "queued") {
+    setProgress("queued", 25);
+  } else if (status === "evaluating") {
+    setProgress("evaluating", 58);
+  } else if (status === "scored" || status === "paid") {
+    setProgress("scored", 100);
+    clearPoll();
+    fetchAndShowResult(data);
+  } else if (status === "rejected") {
+    setProgress("error", 100);
+    clearPoll();
+    showRejected();
+  }
+}
+
+async function fetchAndShowResult(submissionData) {
+  // Try to get full evaluation result
+  try {
+    const r = await fetch("/phoebe/result/" + encodeURIComponent(_submissionId));
+    if (r.ok) {
+      const result = await r.json();
+      showVerdict(submissionData, result);
+      return;
+    }
+  } catch {}
+  // Fall back to what we have in submission data
+  showVerdict(submissionData, submissionData.evaluation || {});
+}
+
+// ── Verdict ───────────────────────────────────────────────────────────────────
+
+function showVerdict(sub, eval_) {
+  const container = document.getElementById("verdict-container");
+  container.style.display = "block";
+  container.classList.add("flash");
+  setTimeout(() => container.classList.remove("flash"), 600);
+
+  const successCount = eval_.successful_attacks ?? 0;
+  const totalScore   = eval_.total_score ?? 0;
+  const payoutUsdc   = eval_.payout_usdc ?? 0;
+  const txHash       = eval_.tx_hash || "—";
+  const status       = (sub.status || "scored").toUpperCase();
+
+  // Badge
+  const badge = document.getElementById("verdict-badge");
+  if (status === "PAID" && payoutUsdc > 0) {
+    badge.className = "verdict-badge vb-paid";
+    badge.textContent = `PAID · $${payoutUsdc.toFixed(4)} USDC`;
+  } else if (successCount > 0) {
+    badge.className = "verdict-badge vb-hit";
+    badge.textContent = `${successCount} ATTACK${successCount > 1 ? "S" : ""} LANDED`;
+  } else {
+    badge.className = "verdict-badge vb-miss";
+    badge.textContent = "NO SUCCESSFUL ATTACKS";
+  }
+
+  document.getElementById("verdict-sub-id").textContent = _submissionId || "—";
+  document.getElementById("stat-score").textContent   = typeof totalScore === "number" ? totalScore.toFixed(3) : totalScore;
+  document.getElementById("stat-attacks").textContent = successCount;
+  document.getElementById("stat-usdc").textContent    = "$" + (typeof payoutUsdc === "number" ? payoutUsdc.toFixed(4) : "0.0000");
+
+  document.getElementById("receipt-status").textContent  = status;
+  document.getElementById("receipt-wallet").textContent  = _phoebeWallet || "—";
+  document.getElementById("receipt-amount").textContent  = "$" + (typeof payoutUsdc === "number" ? payoutUsdc.toFixed(4) : "0.0000") + " USDC";
+  document.getElementById("receipt-tx").textContent      = txHash;
+  document.getElementById("receipt-commit").textContent  = (_commitmentHash || "—").slice(0, 18) + "…";
+  document.getElementById("receipt-bounty").textContent  = _bountyId || (sub.bounty_id || "—");
+
+  if (eval_.prompt_evaluations) {
+    updatePromptResults(eval_.prompt_evaluations);
+  }
+
+  // Re-enable the generate button for next run
+  document.getElementById("gen-btn").disabled = false;
+  document.getElementById("gen-btn").textContent = "Generate New Attack";
+  document.getElementById("gen-label").textContent = "";
+}
+
+function showRejected() {
+  document.getElementById("verdict-container").style.display = "block";
+  const badge = document.getElementById("verdict-badge");
+  badge.className = "verdict-badge vb-miss";
+  badge.textContent = "REJECTED";
+  ["stat-score","stat-attacks"].forEach(id => document.getElementById(id).textContent = "0");
+  document.getElementById("stat-usdc").textContent = "$0.0000";
+  document.getElementById("receipt-status").textContent = "REJECTED";
+  document.getElementById("gen-btn").disabled = false;
+  document.getElementById("gen-btn").textContent = "Generate New Attack";
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function setProgress(state, pct) {
+  const fill = document.getElementById("progress-fill");
+  fill.style.width = pct + "%";
+  fill.className = pct >= 100
+    ? (state === "error" ? "progress-fill error" : "progress-fill done")
+    : "progress-fill";
+
+  document.getElementById("step-queued").className    = "step" + (pct >= 100 ? " done" : pct > 0 ? " active" : "");
+  document.getElementById("step-evaluating").className = "step" + (pct >= 100 ? " done" : pct >= 58 ? " active" : "");
+  document.getElementById("step-scored").className    = "step" + (pct >= 100 ? " done active" : "");
+  if (state === "error") {
+    document.getElementById("step-queued").className = "step error";
+  }
+}
+
+function resetTracker() {
+  document.getElementById("status-idle").style.display = "block";
+  document.getElementById("status-tracker").style.display = "none";
+  document.getElementById("gen-btn").disabled = false;
+  document.getElementById("gen-label").textContent = "";
+}
+
+function setError(msg) {
+  const el = document.getElementById("gen-error");
+  if (msg) { el.textContent = msg; el.style.display = "block"; }
+  else { el.textContent = ""; el.style.display = "none"; }
+}
+
+// Boot
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Safety Monitor</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;--yellow:#8a6800;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,91,200,.2);color:var(--accent);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:12px;}
+  .nav a:hover,.nav a.active{color:var(--accent);font-weight:700;}
+  .body{padding:20px;}
+  /* Queue banner */
+  .queue-banner{background:rgba(192,120,0,.12);border:1px solid rgba(192,120,0,.4);border-radius:var(--radius);padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--orange);}
+  .queue-banner a{color:var(--accent);text-decoration:none;font-weight:700;}
+  /* Grid */
+  .grid-2{display:grid;grid-template-columns:1fr 340px;gap:16px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+  /* Stat cards */
+  .stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  .stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;}
+  .stat-label{font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+  .stat-value{font-size:24px;font-weight:700;color:var(--text);}
+  .stat-sub{font-size:10px;color:var(--text2);margin-top:3px;}
+  .mini-bar{height:5px;background:var(--surface2);border-radius:3px;overflow:hidden;margin-top:6px;}
+  .mini-fill{height:100%;background:var(--accent);border-radius:3px;transition:width .4s;}
+  /* Rule breakdown */
+  .rule-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+  .rule-name{font-size:11px;width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rule-bar{flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;}
+  .rule-fill{height:100%;background:var(--accent);border-radius:4px;}
+  .rule-pct{font-size:10px;color:var(--text2);width:36px;text-align:right;}
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{color:var(--text2);text-transform:uppercase;font-size:10px;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;}
+  td{padding:7px 8px;border-bottom:1px solid rgba(192,144,96,.25);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(0,0,0,.04);}
+  /* Action badges */
+  .act-block{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(192,57,43,.15);color:var(--red);}
+  .act-escalate{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(192,120,0,.15);color:var(--orange);}
+  .act-forward{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(138,104,0,.15);color:var(--yellow);}
+  .act-flag{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(37,99,176,.15);color:var(--blue);}
+  .act-pass{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(26,122,58,.15);color:var(--green);}
+  .sev-critical{color:var(--red);font-weight:700;}
+  .sev-high{color:var(--orange);}
+  .sev-medium{color:var(--blue);}
+  .sev-low{color:var(--text2);}
+  .new-row{animation:highlight .8s ease-out;}
+  @keyframes highlight{0%{background:rgba(74,91,200,.15);}100%{background:transparent;}}
+  .mono{font-family:monospace;font-size:10px;color:var(--text2);}
+  .btn-sm{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);font-family:var(--font);font-size:11px;cursor:pointer;}
+  .btn-sm:hover{color:var(--text);border-color:var(--text2);}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Safety Monitor</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/admin">Admin</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor" class="active">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="body">
+  <!-- Queue banner (shown when review_count > 0) -->
+  <div class="queue-banner" id="queue-banner" style="display:none;">
+    ⚠️ <span id="queue-count">0</span> verdicts awaiting human review
+    &nbsp;<a href="/admin">Review Now →</a>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="stat-label">Total Today</div>
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-sub" id="stat-delta">Loading…</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Blocked</div>
+      <div class="stat-value" id="stat-blocked">—</div>
+      <div class="stat-sub" id="stat-blocked-pct">—</div>
+      <div class="mini-bar"><div class="mini-fill" id="bar-blocked" style="width:0%"></div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Fwd to Sheila</div>
+      <div class="stat-value" id="stat-fwd">—</div>
+      <div class="stat-sub" id="stat-fwd-pct">—</div>
+      <div class="mini-bar"><div class="mini-fill" id="bar-fwd" style="width:0%;background:var(--orange)"></div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <!-- Live verdict table -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">
+          Live Verdicts
+          <button class="btn-sm" onclick="loadVerdicts()" style="margin-left:auto;">↻ Refresh</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>Time</th>
+            <th>Action</th>
+            <th>Rule</th>
+            <th>Severity</th>
+            <th>Atlas Tactic</th>
+            <th>Proof ID</th>
+          </tr></thead>
+          <tbody id="verdict-body">
+            <tr><td colspan="6" style="color:var(--text2);text-align:center;padding:20px;">Connecting to stream…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right column: rule breakdown -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Rule Breakdown</div>
+        <div id="rule-breakdown">
+          <div style="color:var(--text2);font-size:12px;">Loading…</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Action Distribution</div>
+        <div id="action-breakdown">
+          <div style="color:var(--text2);font-size:12px;">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MAX_ROWS = 50;
+let _verdicts = [];
+let _es = null;
+
+function fmtTime(ts) {
+  const d = ts ? new Date(ts * 1000) : new Date();
+  return d.toTimeString().slice(0,8);
+}
+
+function actionBadge(action) {
+  const a = (action||"pass").toLowerCase();
+  if (a === "block") return `<span class="act-block">🔴 BLOCK</span>`;
+  if (a === "escalate") return `<span class="act-escalate">🟠 ESCALATE</span>`;
+  if (a === "forward_to_sheila") return `<span class="act-forward">🟡 FORWARD</span>`;
+  if (a === "flag") return `<span class="act-flag">🔵 FLAG</span>`;
+  return `<span class="act-pass">🟢 PASS</span>`;
+}
+
+function sevClass(s) {
+  const m = {"critical":"sev-critical","high":"sev-high","medium":"sev-medium","low":"sev-low"};
+  return m[(s||"").toLowerCase()] || "";
+}
+
+function renderRow(v, isNew) {
+  const cls = isNew ? ' class="new-row"' : '';
+  return `<tr${cls}>
+    <td class="mono">${fmtTime(v.timestamp)}</td>
+    <td>${actionBadge(v.action)}</td>
+    <td style="font-size:10px;">${esc(v.rule_triggered||"—")}</td>
+    <td><span class="${sevClass(v.severity)}">${esc(v.severity||"—")}</span></td>
+    <td class="mono" style="font-size:10px;">${esc(v.atlas_tactic||"—")}</td>
+    <td class="mono">${esc((v.turn_id||"").slice(0,10))}…</td>
+  </tr>`;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function renderTable() {
+  const tbody = document.getElementById("verdict-body");
+  if (!_verdicts.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2);text-align:center;padding:20px;">No verdicts yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _verdicts.map((v,i) => renderRow(v, i===0)).join("");
+}
+
+function updateStats() {
+  const total = _verdicts.length;
+  const blocked = _verdicts.filter(v => (v.action||"").toLowerCase() === "block").length;
+  const fwd = _verdicts.filter(v => (v.action||"").toLowerCase() === "forward_to_sheila").length;
+  document.getElementById("stat-total").textContent = total;
+  document.getElementById("stat-delta").textContent = "Last 50 verdicts";
+  document.getElementById("stat-blocked").textContent = blocked;
+  document.getElementById("stat-blocked-pct").textContent = total ? `${((blocked/total)*100).toFixed(1)}%` : "—";
+  document.getElementById("stat-fwd").textContent = fwd;
+  document.getElementById("stat-fwd-pct").textContent = total ? `${((fwd/total)*100).toFixed(1)}%` : "—";
+  if (total) {
+    document.getElementById("bar-blocked").style.width = ((blocked/total)*100) + "%";
+    document.getElementById("bar-fwd").style.width = ((fwd/total)*100) + "%";
+  }
+  // Rule breakdown
+  const ruleCounts = {};
+  _verdicts.forEach(v => { const r = v.rule_triggered||"none"; ruleCounts[r] = (ruleCounts[r]||0)+1; });
+  const sorted = Object.entries(ruleCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxCount = sorted[0] ? sorted[0][1] : 1;
+  document.getElementById("rule-breakdown").innerHTML = sorted.map(([r,c]) =>
+    `<div class="rule-row">
+      <div class="rule-name">${esc(r)}</div>
+      <div class="rule-bar"><div class="rule-fill" style="width:${(c/maxCount*100).toFixed(0)}%"></div></div>
+      <div class="rule-pct">${((c/total)*100).toFixed(0)}%</div>
+    </div>`
+  ).join("") || '<div style="color:var(--text2);font-size:11px;">No data</div>';
+  // Action distribution
+  const actions = ["pass","flag","block","escalate","forward_to_sheila"];
+  const labels = {pass:"PASS",flag:"FLAG",block:"BLOCK",escalate:"ESCALATE",forward_to_sheila:"FWD→SHEILA"};
+  const actionCounts = {};
+  actions.forEach(a => { actionCounts[a] = _verdicts.filter(v=>(v.action||"pass").toLowerCase()===a).length; });
+  document.getElementById("action-breakdown").innerHTML = actions.filter(a=>actionCounts[a]>0).map(a =>
+    `<div class="rule-row">
+      <div class="rule-name">${labels[a]}</div>
+      <div class="rule-bar"><div class="rule-fill" style="width:${(actionCounts[a]/total*100).toFixed(0)}%;background:${a==='block'?'var(--red)':a==='escalate'?'var(--orange)':a==='forward_to_sheila'?'var(--yellow)':a==='flag'?'var(--blue)':'var(--green)'}"></div></div>
+      <div class="rule-pct">${actionCounts[a]}</div>
+    </div>`
+  ).join("") || '<div style="color:var(--text2);font-size:11px;">No data</div>';
+  // Queue banner
+  const reviewCount = _verdicts.filter(v => ["block","escalate"].includes((v.action||"").toLowerCase())).length;
+  if (reviewCount > 0) {
+    document.getElementById("queue-count").textContent = reviewCount;
+    document.getElementById("queue-banner").style.display = "flex";
+  }
+}
+
+async function loadVerdicts() {
+  try {
+    const r = await fetch("/api/monitor/verdicts?limit=50");
+    if (r.ok) {
+      const d = await r.json();
+      _verdicts = d.verdicts || [];
+    }
+  } catch(_) {}
+  // Use stub data if empty (dev/demo mode)
+  if (!_verdicts.length) {
+    _verdicts = _stubVerdicts();
+  }
+  renderTable();
+  updateStats();
+}
+
+function _stubVerdicts() {
+  const now = Date.now()/1000;
+  const rules = ["PromptInjectionRule","AuthorityClaimRule","DataExfiltrationRule","PrivilegeEscalationRule","CoordinatedAttackRule"];
+  const actions = ["block","flag","pass","forward_to_sheila","escalate","pass","pass","pass"];
+  const tactics = ["AML.TA0004","AML.TA0007","AML.TA0005","AML.TA0003","AML.TA0004"];
+  const sevs = ["critical","high","medium","low","critical"];
+  return Array.from({length:12}, (_,i) => ({
+    timestamp: now - i*37,
+    action: actions[i%actions.length],
+    rule_triggered: actions[i%actions.length]==="pass" ? null : rules[i%rules.length],
+    severity: actions[i%actions.length]==="pass" ? null : sevs[i%sevs.length],
+    atlas_tactic: actions[i%actions.length]==="pass" ? null : tactics[i%tactics.length],
+    turn_id: "turn_" + Math.random().toString(36).slice(2,10),
+  }));
+}
+
+function connectSSE() {
+  if (_es) _es.close();
+  _es = new EventSource("/monitor/stream");
+  _es.onmessage = (e) => {
+    try {
+      const v = JSON.parse(e.data);
+      if (v.heartbeat) return;
+      _verdicts.unshift(v);
+      if (_verdicts.length > MAX_ROWS) _verdicts.pop();
+      renderTable();
+      updateStats();
+    } catch(_) {}
+  };
+  _es.onerror = () => { /* reconnects automatically */ };
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadVerdicts();
+  connectSSE();
+  setInterval(loadVerdicts, 30000);
+});
+</script>
+</body>
+</html>

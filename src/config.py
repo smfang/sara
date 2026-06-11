@@ -1,0 +1,148 @@
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Config(BaseSettings):
+    # clickhouse config
+    clickhouse_host: str = "localhost"
+    """host for the clickhouse server"""
+    clickhouse_port: int = 8123
+    """port for the clickhouse server"""
+    clickhouse_user: str = "default"
+    """username for the clickhouse server"""
+    clickhouse_password: str = "clickhouse"
+    """password for the clickhouse server"""
+    clickhouse_database: str = "default"
+    """default database for the clickhouse server"""
+
+    # model config — used for Sara's own LLM reasoning + safety classifier
+    model_api: Literal["anthropic", "openai", "openapi", "kimi", "glm", "deepseek"] = "kimi"
+    """the model api to use. must be one of `anthropic`, `openai`, `openapi`, `kimi`, `glm`, or `deepseek`"""
+    model_name: str = "kimi-k2"
+    """the model to use with the given api"""
+    model_api_key: str = ""
+    """the model api key"""
+    model_endpoint: str = ""
+    """for openapi model apis, the endpoint to use"""
+
+    # New provider API keys
+    moonshot_api_key: str = ""
+    """API key for Kimi (Moonshot AI) — env: MOONSHOT_API_KEY"""
+    zhipu_api_key: str = ""
+    """API key for GLM (Zhipu AI / Z.ai) — env: ZHIPU_API_KEY"""
+    deepseek_api_key: str = ""
+    """API key for DeepSeek — env: DEEPSEEK_API_KEY"""
+
+    # x402 payment config
+    x402_wallet_private_key: str = ""
+    """private key for signing x402 USDC payments (EVM or Solana)"""
+    x402_wallet_address: str = ""
+    """wallet address for x402 payments"""
+    x402_chain: str = "base"
+    """blockchain to use for x402 payments (base, solana, etc.)"""
+    x402_facilitator_url: str = ""
+    """x402 facilitator URL for payment settlement"""
+    x402_max_auto_pay: float = 1.0
+    """maximum USDC amount to auto-pay per x402 request"""
+
+    # arena config
+    arena_host: str = "0.0.0.0"
+    """host for the arena HTTP server"""
+    arena_port: int = 8080
+    """port for the arena HTTP server"""
+    arena_submission_fee: float = 0.01
+    """USDC fee per attack submission (anti-spam)"""
+    arena_scoring_alpha: float = 0.4
+    """scoring weight for attack success"""
+    arena_scoring_beta: float = 0.3
+    """scoring weight for novelty"""
+    arena_scoring_gamma: float = 0.2
+    """scoring weight for category coverage"""
+    arena_scoring_delta: float = 0.1
+    """scoring weight for duplicate penalty"""
+    arena_payout_rate: float = 1.0
+    """score-to-USDC multiplier for payouts"""
+    arena_wallet: str = "arena.sandbox.eth"
+    """arena's wallet address for receiving bounty funds and submission fees"""
+    arena_dev_mode: bool = True
+    """run arena in dev mode (accept DevWallet HMAC signatures, skip real EVM verification)"""
+
+    # spending limits
+    x402_spending_limit: float = 100.0
+    """cumulative USDC spending limit for x402 client"""
+
+    # safety classifier config
+    safety_classifier_model: str = "claude-sonnet-4-5-20250929"
+    """model to use for the LLM-as-judge safety classifier"""
+    safety_classifier_endpoint: str = "https://api.anthropic.com"
+    """API endpoint for the safety classifier"""
+
+    # Ozone enforcement
+    ozone_enabled: bool = True
+    """enable the Ozone enforcement layer"""
+    ozone_default_mode: str = "sync"
+    """default enforcement mode: sync | async | quarantine"""
+    ozone_false_positive_threshold: float = 0.02
+    """false-positive rate above which auto-rollback is triggered (2%)"""
+    ozone_human_review_queue_size: int = 100
+    """maximum number of items in the human review queue"""
+    ozone_auto_rollback_enabled: bool = True
+    """automatically rollback enforcements when false-positive rate exceeds threshold"""
+    ozone_metrics_window_hours: int = 24
+    """rolling window (hours) for false-positive rate calculation"""
+
+    # Osprey rule engine
+    osprey_enabled: bool = True
+    """enable the Osprey SML rule engine"""
+    osprey_kafka_servers: str = "localhost:9092"
+    """Kafka bootstrap servers for Osprey"""
+    osprey_input_topic: str = "sara.events.input"
+    """Kafka topic for routing events sent to Osprey"""
+    osprey_output_topic: str = "sara.events.output"
+    """Kafka topic for Osprey verdict responses"""
+    osprey_timeout_ms: int = 500
+    """maximum wait time (ms) for an Osprey verdict before falling back"""
+    osprey_fallback_to_python: bool = True
+    """use Python keyword rules if Osprey is unavailable"""
+
+    # Safety monitoring
+    safety_monitoring_enabled: bool = True
+    """enable the Sara safety monitor"""
+    safety_rules_version: str = "v0.1"
+    """version of the safety rule set"""
+    human_review_queue_size: int = 100
+    """maximum number of items in the human review queue"""
+    sheila_forward_threshold: float = 0.7
+    """forward to Sheila if routing_confidence < this threshold"""
+
+    # Sheila integration
+    sheila_a2a_url: str = ""
+    """set via SHEILA_A2A_URL env var — URL of Sheila TEE enclave (Phase 5)"""
+    sheila_enabled: bool = True
+    """enable Sheila integration"""
+
+    # Red teaming
+    red_team_enabled: bool = True
+    """enable automated red teaming"""
+    red_team_schedule_cron: str = "0 2 * * *"
+    """cron schedule for automated red team sessions (default: 2am daily)"""
+    red_team_signing_secret: str = ""
+    """set via SARA_RED_TEAM_SECRET env var — HMAC signing secret for probe IDs"""
+
+    # DPO training
+    dpo_data_dir: str = "data/dpo"
+    """directory for DPO training data"""
+    dpo_model_output_dir: str = "models/sheila-judge-dpo"
+    """output directory for DPO-trained Sheila judge model"""
+    dpo_base_model: str = "Qwen/Qwen2.5-7B-Instruct"
+    """base model for DPO fine-tuning (Sheila judge)"""
+
+    # MITRE ATLAS
+    atlas_taxonomy_version: str = "v2025-10"
+    """version of the MITRE ATLAS taxonomy in use"""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+
+CONFIG = Config()

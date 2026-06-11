@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Admin Dashboard</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--red-dim:#7f1d1d;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(239,68,68,.2);color:var(--red);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:16px;}
+  .nav a:hover{color:var(--text);}
+  /* Login gate */
+  .login-gate{display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 53px);}
+  .login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:32px;width:360px;}
+  .login-box h2{font-size:15px;margin-bottom:16px;}
+  /* Layout */
+  .page{padding:20px;display:none;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+  /* Forms */
+  label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px;}
+  input,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;transition:border-color .15s;}
+  input:focus,select:focus{border-color:var(--accent);}
+  .field{margin-bottom:12px;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;transition:all .15s;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:var(--accent-dim);}
+  .btn-sm{padding:4px 9px;font-size:11px;}
+  .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text);border-color:var(--text2);}
+  .btn-danger{background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3);}
+  .btn-danger:hover{background:rgba(239,68,68,.25);}
+  .btn-success{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3);}
+  /* Tables */
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{color:var(--text2);text-transform:uppercase;font-size:10px;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;cursor:pointer;user-select:none;}
+  th:hover{color:var(--text);}
+  td{padding:7px 8px;border-bottom:1px solid rgba(46,49,68,.4);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(255,255,255,.02);}
+  /* Payment type badges */
+  .pay-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .pay-payout{background:rgba(34,197,94,.15);color:var(--green);}
+  .pay-penalty{background:rgba(239,68,68,.15);color:var(--red);}
+  .pay-refund{background:rgba(59,130,246,.15);color:var(--blue);}
+  .pay-fee{background:rgba(245,158,11,.12);color:var(--orange);}
+  .pay-funding{background:rgba(108,123,247,.12);color:var(--accent);}
+  /* Bounty cards */
+  .bounty-card{border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;}
+  .progress-bar{width:100%;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;margin:6px 0;}
+  .progress-fill{height:100%;background:var(--green);border-radius:3px;transition:width .4s;}
+  .paused-badge{font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(245,158,11,.15);color:var(--orange);}
+  .active-badge{font-size:10px;padding:1px 6px;border-radius:3px;background:rgba(34,197,94,.12);color:var(--green);}
+  /* Severity */
+  .sev-critical{color:var(--red);} .sev-high{color:var(--orange);} .sev-medium{color:var(--blue);}
+  .filter-row{display:flex;gap:8px;margin-bottom:12px;align-items:center;}
+  .filter-row select{width:auto;padding:5px 8px;font-size:11px;}
+  a.ext{color:var(--accent);font-size:10px;text-decoration:none;}
+  a.ext:hover{text-decoration:underline;}
+  .topup-row{display:flex;gap:6px;margin-top:8px;}
+  .topup-row input{flex:1;padding:5px 8px;font-size:11px;}
+  .empty-state{color:var(--text2);text-align:center;padding:20px;font-size:12px;}
+  .error-msg{color:var(--red);font-size:11px;margin-top:6px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Admin Dashboard</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/tns">T&amp;S</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="#" onclick="logout()">Logout</a>
+  </nav>
+</div>
+
+<!-- Login gate -->
+<div class="login-gate" id="login-gate">
+  <div class="login-box">
+    <h2>Admin Login</h2>
+    <div class="field">
+      <label>Admin API Key</label>
+      <input type="password" id="api-key-input" placeholder="SARA_ADMIN_KEY value" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" onclick="doLogin()">Login</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div class="page" id="dashboard-page">
+  <!-- Panel A: Payment log -->
+  <div class="panel">
+    <div class="panel-title">
+      Panel A — Payment Log
+      <div class="filter-row" style="margin-left:auto;margin-bottom:0;">
+        <select id="pay-type-filter" onchange="filterPayments()">
+          <option value="">All types</option>
+          <option value="researcher_payout">Payout</option>
+          <option value="payout_below_minimum">Below min</option>
+          <option value="submission_fee">Fee</option>
+          <option value="bounty_funding">Funding</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="loadPayments()">↻</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th onclick="sortPayments('submission_id')">Submission</th>
+        <th onclick="sortPayments('to_wallet')">Researcher</th>
+        <th onclick="sortPayments('amount_usdc')">Amount</th>
+        <th onclick="sortPayments('payment_type')">Type</th>
+        <th onclick="sortPayments('tx_hash')">Tx Hash</th>
+        <th onclick="sortPayments('timestamp')">Time ↓</th>
+      </tr></thead>
+      <tbody id="payments-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="grid">
+    <!-- Panel B: Bounty management -->
+    <div class="panel">
+      <div class="panel-title">
+        Panel B — Bounty Management
+        <button class="btn btn-ghost btn-sm" onclick="loadBounties()">↻</button>
+        <button class="btn btn-sm btn-success" style="margin-left:auto;" onclick="toggleCreateForm()">+ Create Bounty</button>
+      </div>
+
+      <!-- Create Bounty form (hidden by default) -->
+      <div id="create-form" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:14px;">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">New Bounty</div>
+        <div class="field">
+          <label>Target Model Name</label>
+          <input type="text" id="cb-model-name" placeholder="gpt-4o, claude-3-opus, llama3…">
+        </div>
+        <div class="field">
+          <label>Target Model Endpoint</label>
+          <input type="text" id="cb-endpoint" placeholder="http://localhost:11434/v1">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="field">
+            <label>Pool (USDC)</label>
+            <input type="number" id="cb-pool" placeholder="100" min="1" step="1" value="100">
+          </div>
+          <div class="field">
+            <label>Max Payout / Finding (USDC)</label>
+            <input type="number" id="cb-max-payout" placeholder="10" min="0.01" step="0.01" value="10">
+          </div>
+        </div>
+        <div class="field">
+          <label>Categories <span style="color:var(--text2);font-size:10px;">(comma-separated)</span></label>
+          <input type="text" id="cb-categories" value="prompt_injection,pii_extraction,jailbreak" placeholder="prompt_injection,pii_extraction,jailbreak">
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary btn-sm" onclick="createBounty()">Create</button>
+          <button class="btn btn-ghost btn-sm" onclick="toggleCreateForm()">Cancel</button>
+          <span id="cb-error" style="color:var(--red);font-size:11px;"></span>
+          <span id="cb-success" style="color:var(--green);font-size:11px;"></span>
+        </div>
+      </div>
+
+      <div id="bounties-container"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <!-- Panel C: ERC8004 attestations -->
+    <div class="panel">
+      <div class="panel-title">
+        Panel C — ERC8004 Attestations
+        <div class="filter-row" style="margin-left:auto;margin-bottom:0;">
+          <select id="event-type-filter" onchange="filterAttestations()">
+            <option value="">All events</option>
+            <option value="CLASSIFICATION">Classification</option>
+            <option value="TRAINING_ROUND">Training round</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" onclick="loadAttestations()">↻</button>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Event</th><th>Session</th><th>Category</th><th>Verdict</th><th>Tx Hash</th><th>Time</th></tr></thead>
+        <tbody id="attestations-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Panel D: Submission review queue -->
+  <div class="panel">
+    <div class="panel-title">Panel D — Stalled Submission Queue <button class="btn btn-ghost btn-sm" onclick="loadQueue()">↻</button></div>
+    <table>
+      <thead><tr><th>Submission ID</th><th>Researcher</th><th>Bounty</th><th>Age</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody id="queue-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+let ADMIN_KEY = "";
+let allPayments = [];
+let allAttestations = [];
+
+function getHeaders() { return { "Content-Type":"application/json", "X-Admin-Key": ADMIN_KEY }; }
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+async function doLogin() {
+  const key = document.getElementById("api-key-input").value.trim();
+  if (!key) return;
+  // Test the key by hitting a protected endpoint
+  const r = await fetch("/admin/payments?limit=1", { headers:{"X-Admin-Key":key} });
+  if (r.status === 403) {
+    document.getElementById("login-error").textContent = "Invalid admin key.";
+    return;
+  }
+  ADMIN_KEY = key;
+  localStorage.setItem("sara_admin_key", key);
+  showDashboard();
+}
+
+function logout() {
+  localStorage.removeItem("sara_admin_key");
+  ADMIN_KEY = "";
+  document.getElementById("dashboard-page").style.display = "none";
+  document.getElementById("login-gate").style.display = "flex";
+}
+
+function showDashboard() {
+  document.getElementById("login-gate").style.display = "none";
+  document.getElementById("dashboard-page").style.display = "block";
+  loadPayments();
+  loadBounties();
+  loadAttestations();
+  loadQueue();
+}
+
+// ── Payments ──────────────────────────────────────────────────────────────────
+
+let paySort = { col:"timestamp", asc:false };
+
+async function loadPayments() {
+  try {
+    const r = await fetch("/admin/payments", { headers:getHeaders() });
+    allPayments = (await r.json()).payments || [];
+    renderPayments();
+  } catch(e) { document.getElementById("payments-body").innerHTML = `<tr><td colspan="6" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+function filterPayments() { renderPayments(); }
+function sortPayments(col) { paySort = { col, asc: paySort.col===col ? !paySort.asc : false }; renderPayments(); }
+
+function renderPayments() {
+  const filter = document.getElementById("pay-type-filter").value;
+  let rows = filter ? allPayments.filter(p=>p.payment_type===filter) : [...allPayments];
+  rows.sort((a,b) => {
+    const va=a[paySort.col]||"", vb=b[paySort.col]||"";
+    return paySort.asc ? (va>vb?1:-1) : (va<vb?1:-1);
+  });
+  document.getElementById("payments-body").innerHTML = rows.length ? rows.map(p => {
+    const dt = new Date(p.timestamp*1000).toLocaleString();
+    const badge = payBadge(p.payment_type);
+    const txShort = p.tx_hash ? p.tx_hash.slice(0,12)+"…" : "—";
+    return `<tr>
+      <td title="${esc(p.submission_id)}">${esc(p.submission_id.slice(0,10))||"—"}</td>
+      <td title="${esc(p.to_wallet)}">${esc(shortAddr(p.to_wallet))}</td>
+      <td style="color:var(--green)">$${p.amount_usdc.toFixed(4)}</td>
+      <td>${badge}</td>
+      <td><span style="font-family:monospace">${esc(txShort)}</span></td>
+      <td>${dt}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty-state">No payments found</td></tr>`;
+}
+
+function payBadge(t) {
+  const m = {researcher_payout:"pay-payout",payout_below_minimum:"pay-penalty",submission_fee:"pay-fee",bounty_funding:"pay-funding"};
+  const cls = m[t]||"pay-refund";
+  const labels = {researcher_payout:"PAYOUT",payout_below_minimum:"PENALTY",submission_fee:"FEE",bounty_funding:"FUNDING"};
+  return `<span class="pay-badge ${cls}">${labels[t]||t.toUpperCase()}</span>`;
+}
+
+// ── Bounties ──────────────────────────────────────────────────────────────────
+
+function toggleCreateForm() {
+  const f = document.getElementById("create-form");
+  f.style.display = f.style.display === "none" ? "block" : "none";
+  document.getElementById("cb-error").textContent = "";
+  document.getElementById("cb-success").textContent = "";
+}
+
+async function createBounty() {
+  document.getElementById("cb-error").textContent = "";
+  document.getElementById("cb-success").textContent = "";
+
+  const modelName = document.getElementById("cb-model-name").value.trim();
+  const endpoint  = document.getElementById("cb-endpoint").value.trim();
+  const pool      = parseFloat(document.getElementById("cb-pool").value || "0");
+  const maxPayout = parseFloat(document.getElementById("cb-max-payout").value || "0");
+  const cats      = document.getElementById("cb-categories").value
+                      .split(",").map(s => s.trim()).filter(Boolean);
+
+  if (!modelName) { document.getElementById("cb-error").textContent = "Model name required."; return; }
+  if (!endpoint)  { document.getElementById("cb-error").textContent = "Endpoint required."; return; }
+  if (pool <= 0)  { document.getElementById("cb-error").textContent = "Pool must be > 0."; return; }
+
+  // Dev-mode payment header
+  const payment = { sender: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", amount: String(pool),
+                    signature: "dev-sig", timestamp: Math.floor(Date.now()/1000), nonce: Math.random() };
+  const payHeader = btoa(JSON.stringify(payment));
+
+  try {
+    const r = await fetch("/api/bounties", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-payment": payHeader, ...getHeaders() },
+      body: JSON.stringify({
+        target_model_name: modelName,
+        target_model_endpoint: endpoint,
+        pool_usdc: pool,
+        max_payout_per_finding: maxPayout,
+        categories: cats,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || r.status);
+    document.getElementById("cb-success").textContent = `Created: ${d.bounty_id}`;
+    document.getElementById("cb-model-name").value = "";
+    document.getElementById("cb-endpoint").value = "";
+    await loadBounties();
+  } catch(e) {
+    document.getElementById("cb-error").textContent = "Error: " + e.message;
+  }
+}
+
+async function loadBounties() {
+  try {
+    const r = await fetch("/admin/bounties", { headers:getHeaders() });
+    const d = await r.json();
+    const container = document.getElementById("bounties-container");
+    const bounties = d.bounties || [];
+    if (!bounties.length) { container.innerHTML = '<div class="empty-state">No bounties.</div>'; return; }
+    container.innerHTML = bounties.map(b => {
+      const pct = b.pool_usdc > 0 ? Math.max(0, Math.min(100, (b.remaining_usdc/b.pool_usdc)*100)) : 0;
+      const isPaused = b.status === "paused";
+      return `<div class="bounty-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <strong>${esc(b.target_model_name||b.bounty_id)}</strong>
+          <span class="${isPaused?'paused-badge':'active-badge'}">${esc(b.status.toUpperCase())}</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <div style="font-size:11px;color:var(--text2);">$${(b.remaining_usdc||0).toFixed(2)} / $${(b.pool_usdc||0).toFixed(2)} remaining</div>
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${isPaused
+            ? `<button class="btn btn-sm btn-success" data-bounty-id="${esc(b.bounty_id)}" onclick="resumeBounty(this.dataset.bountyId)">Resume</button>`
+            : `<button class="btn btn-sm btn-danger" data-bounty-id="${esc(b.bounty_id)}" onclick="pauseBounty(this.dataset.bountyId)">Pause</button>`}
+        </div>
+        <div class="topup-row">
+          <input type="number" class="topup-input" placeholder="Top-up USDC" min="0.01" step="0.01" style="width:120px;">
+          <button class="btn btn-sm btn-ghost" data-bounty-id="${esc(b.bounty_id)}" onclick="topupBounty(this)">Top Up</button>
+        </div>
+      </div>`;
+    }).join("");
+  } catch(e) { document.getElementById("bounties-container").innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+async function pauseBounty(id) {
+  await fetch(`/admin/bounty/${id}/pause`, { method:"POST", headers:getHeaders() });
+  loadBounties();
+}
+async function resumeBounty(id) {
+  await fetch(`/admin/bounty/${id}/resume`, { method:"POST", headers:getHeaders() });
+  loadBounties();
+}
+async function topupBounty(btn) {
+  const id = btn.dataset.bountyId;
+  const amt = parseFloat(btn.previousElementSibling.value || "0");
+  if (!amt || amt <= 0) return;
+  await fetch(`/admin/bounty/${id}/topup`, { method:"POST", headers:getHeaders(), body: JSON.stringify({amount_usdc:amt}) });
+  loadBounties();
+}
+
+// ── Attestations ──────────────────────────────────────────────────────────────
+
+async function loadAttestations() {
+  try {
+    const r = await fetch("/admin/attestations", { headers:getHeaders() });
+    allAttestations = (await r.json()).events || [];
+    renderAttestations();
+  } catch(e) { document.getElementById("attestations-body").innerHTML = `<tr><td colspan="6" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+function filterAttestations() { renderAttestations(); }
+
+function renderAttestations() {
+  const filter = document.getElementById("event-type-filter").value;
+  const rows = filter ? allAttestations.filter(e=>e.event_type===filter) : allAttestations;
+  document.getElementById("attestations-body").innerHTML = rows.length ? rows.map(e => {
+    const dt = e.timestamp ? new Date(e.timestamp*1000).toLocaleString() : "—";
+    const txShort = e.block_tx_hash ? e.block_tx_hash.slice(0,12)+"…" : "—";
+    return `<tr>
+      <td><span class="pay-badge pay-funding">${esc(e.event_type||"—")}</span></td>
+      <td title="${esc(e.session_id||'')}">${esc((e.session_id||"—").slice(0,12))}</td>
+      <td>${esc(e.attack_category||"—")}</td>
+      <td>${esc(e.verdict||"—")}</td>
+      <td>${e.block_tx_hash?`<a class="ext" href="https://basescan.org/tx/${esc(e.block_tx_hash)}" target="_blank">${esc(txShort)}</a>`:"—"}</td>
+      <td>${dt}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="6" class="empty-state">No attestation events found</td></tr>`;
+}
+
+// ── Stalled queue ─────────────────────────────────────────────────────────────
+
+async function loadQueue() {
+  try {
+    const r = await fetch("/admin/queue", { headers:getHeaders() });
+    const d = await r.json();
+    const rows = d.submissions || [];
+    document.getElementById("queue-body").innerHTML = rows.length ? rows.map(s => {
+      const age = s.age_seconds > 60 ? `${Math.round(s.age_seconds/60)}m` : `${s.age_seconds}s`;
+      return `<tr>
+        <td style="font-size:10px;font-family:monospace">${esc(s.submission_id.slice(0,12))}</td>
+        <td title="${esc(s.researcher_wallet)}">${esc(shortAddr(s.researcher_wallet))}</td>
+        <td>${esc((s.bounty_id||"—").slice(0,10))}</td>
+        <td style="color:var(--orange)">${age}</td>
+        <td>${esc(s.status)}</td>
+        <td><button class="btn btn-sm btn-ghost" data-submission-id="${esc(s.submission_id)}" onclick="requeue(this.dataset.submissionId)">Re-evaluate</button></td>
+      </tr>`;
+    }).join("") : `<tr><td colspan="6" class="empty-state">No stalled submissions</td></tr>`;
+  } catch(e) { document.getElementById("queue-body").innerHTML = `<tr><td colspan="6" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+async function requeue(id) {
+  await fetch(`/admin/submission/${id}/requeue`, { method:"POST", headers:getHeaders() });
+  loadQueue();
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function shortAddr(a) { return a && a.length > 14 ? a.slice(0,6)+"…"+a.slice(-4) : a; }
+
+// Auto-login if key stored
+const saved = localStorage.getItem("sara_admin_key");
+if (saved) { document.getElementById("api-key-input").value = saved; ADMIN_KEY = saved; showDashboard(); }
+</script>
+</body>
+</html>

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Sara-in-a-Box</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(108,123,247,.2);color:var(--accent);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:16px;}
+  .nav a:hover{color:var(--text);}
+  .tabs{display:flex;padding:0 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .tab{padding:12px 18px;font-size:12px;font-weight:600;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .tab-content{display:none;padding:20px;}
+  .tab-content.active{display:block;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
+  label{font-size:11px;color:var(--text2);display:block;margin-bottom:4px;}
+  input,textarea,select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--font);font-size:13px;padding:8px 10px;outline:none;transition:border-color .15s;}
+  input:focus,textarea:focus,select:focus{border-color:var(--accent);}
+  textarea{resize:vertical;min-height:80px;}
+  .field{margin-bottom:12px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;transition:all .15s;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:var(--accent-dim);}
+  .btn-sm{padding:4px 9px;font-size:11px;}
+  .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text);border-color:var(--text2);}
+  /* JSON preview */
+  .json-preview{background:#f5ecd8;border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;font-family:monospace;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto;color:#3a2a14;}
+  /* Category cards */
+  .cat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+  .cat-card{border:1px solid var(--border);border-radius:6px;padding:14px;cursor:pointer;transition:border-color .15s;}
+  .cat-card:hover{border-color:var(--accent);}
+  .cat-card.expanded{border-color:var(--accent);}
+  .cat-name{font-weight:600;font-size:13px;margin-bottom:4px;}
+  .cat-desc{font-size:11px;color:var(--text2);margin-bottom:8px;}
+  .cat-detail{display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px;}
+  .cat-card.expanded .cat-detail{display:block;}
+  .sev-badge{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .sev-critical{background:rgba(239,68,68,.15);color:var(--red);}
+  .sev-high{background:rgba(245,158,11,.12);color:var(--orange);}
+  .sev-medium{background:rgba(59,130,246,.12);color:var(--blue);}
+  .sev-low{background:rgba(148,153,173,.12);color:var(--text2);}
+  .auto-stop-yes{color:var(--red);font-size:10px;font-weight:700;}
+  .auto-stop-no{color:var(--text2);font-size:10px;}
+  /* Classification result */
+  .result-box{border:1px solid var(--border);border-radius:6px;padding:14px;margin-top:14px;display:none;}
+  .label-safe{background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.3);}
+  .label-unsafe{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3);}
+  .label-badge{display:inline-block;padding:3px 12px;border-radius:4px;font-size:12px;font-weight:700;text-transform:uppercase;margin-bottom:10px;}
+  .badge-safe{background:rgba(34,197,94,.2);color:var(--green);}
+  .badge-unsafe{background:rgba(239,68,68,.2);color:var(--red);}
+  .gauge-wrap{margin:6px 0 10px;}
+  .gauge-bar{width:100%;height:10px;background:var(--surface2);border-radius:5px;overflow:hidden;}
+  .gauge-fill{height:100%;border-radius:5px;transition:width .5s;}
+  .gauge-green{background:var(--green);}
+  .gauge-amber{background:var(--orange);}
+  .gauge-red{background:var(--red);}
+  .raw-toggle{font-size:10px;color:var(--accent);cursor:pointer;margin-top:10px;display:inline-block;}
+  .raw-json{display:none;margin-top:8px;}
+  .indicator-list{font-size:10px;color:var(--text2);margin-top:4px;}
+  .indicator-list li{list-style:disc;margin-left:14px;margin-bottom:1px;}
+  .flash{animation:flash .4s;}
+  @keyframes flash{0%{background:rgba(108,123,247,.15);}100%{background:transparent;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Sara-in-a-Box</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/admin">Admin</a>
+    <a href="/tns">T&amp;S</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab(0)">⚙ Config Studio</div>
+  <div class="tab" onclick="switchTab(1)">🔬 Taxonomy Preview</div>
+  <div class="tab" onclick="switchTab(2)">⚡ Classification Tester</div>
+</div>
+
+<!-- Tab 0: Config Studio -->
+<div class="tab-content active" id="tab-0">
+  <div class="grid2">
+    <div>
+      <div class="panel">
+        <div class="panel-title">SkillFile Configuration</div>
+        <div class="field">
+          <label>Org ID</label>
+          <input type="text" id="org-id" placeholder="my-dao-001" oninput="updatePreview()">
+        </div>
+        <div class="field">
+          <label>Display Name</label>
+          <input type="text" id="display-name" placeholder="My DAO Safety Agent" oninput="updatePreview()">
+        </div>
+        <div class="field">
+          <label>Org Type</label>
+          <select id="org-type" onchange="updatePreview()">
+            <option value="dao">DAO</option>
+            <option value="defi">DeFi</option>
+            <option value="nft">NFT</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>System Prompt Extension</label>
+          <textarea id="spe" placeholder="Additional context for Sara's safety classifier…" rows="5" oninput="updatePreview()"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn btn-primary" onclick="saveSkillFile()">Save SkillFile</button>
+          <button class="btn btn-ghost" onclick="loadSkillFile()">Load</button>
+          <span id="save-status" style="font-size:11px;color:var(--green);margin-left:4px;"></span>
+        </div>
+        <div id="save-result" style="font-size:11px;color:var(--text2);margin-top:8px;"></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="panel-title">Live JSON Preview</div>
+        <div class="json-preview" id="json-preview">{}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab 1: Taxonomy Preview -->
+<div class="tab-content" id="tab-1">
+  <div class="panel">
+    <div class="panel-title">
+      Taxonomy for
+      <select id="taxonomy-org-type" onchange="loadTaxonomy()" style="width:auto;padding:3px 8px;font-size:11px;margin-left:8px;">
+        <option value="dao">DAO</option>
+        <option value="defi">DeFi</option>
+        <option value="nft">NFT</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadTaxonomy()" style="margin-left:8px;">↻</button>
+    </div>
+    <div class="cat-grid" id="cat-grid"><div style="color:var(--text2);">Loading…</div></div>
+  </div>
+</div>
+
+<!-- Tab 2: Classification Tester -->
+<div class="tab-content" id="tab-2">
+  <div class="grid2">
+    <div>
+      <div class="panel">
+        <div class="panel-title">Test Prompt</div>
+        <div class="field">
+          <label>Org ID</label>
+          <input type="text" id="classify-org-id" placeholder="my-dao-001 (leave blank for default taxonomy)">
+        </div>
+        <div class="field">
+          <label>Prompt</label>
+          <textarea id="classify-prompt" placeholder="Enter a prompt to classify…" rows="6"></textarea>
+        </div>
+        <button class="btn btn-primary" id="classify-btn" onclick="runClassify()">Test →</button>
+        <div id="classify-error" style="color:var(--red);font-size:11px;margin-top:6px;"></div>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <div class="panel-title">Result</div>
+        <div id="classify-placeholder" style="color:var(--text2);font-size:12px;">Enter a prompt and click Test.</div>
+        <div class="result-box" id="classify-result">
+          <span class="label-badge" id="result-badge">SAFE</span>
+          <div style="font-size:11px;color:var(--text2);">Matched Category: <span id="result-category" style="color:var(--text);">—</span></div>
+          <div class="gauge-wrap">
+            <div style="font-size:10px;color:var(--text2);margin-bottom:3px;">Confidence: <span id="result-conf-pct">0%</span></div>
+            <div class="gauge-bar"><div class="gauge-fill" id="result-gauge" style="width:0%"></div></div>
+          </div>
+          <div style="font-size:11px;color:var(--text2);">Explanation</div>
+          <div id="result-explanation" style="font-size:12px;margin-top:4px;"></div>
+          <span class="raw-toggle" onclick="toggleRaw()">Show Raw Response ▾</span>
+          <pre class="raw-json json-preview" id="result-raw"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const tabs = document.querySelectorAll(".tab");
+const contents = document.querySelectorAll(".tab-content");
+
+function switchTab(i) {
+  tabs.forEach((t,j)=>t.classList.toggle("active",i===j));
+  contents.forEach((c,j)=>c.classList.toggle("active",i===j));
+  if (i===1) loadTaxonomy();
+}
+
+// ── Config Studio ─────────────────────────────────────────────────────────────
+
+function updatePreview() {
+  const obj = {
+    org_id: document.getElementById("org-id").value||"",
+    display_name: document.getElementById("display-name").value||"",
+    org_type: document.getElementById("org-type").value,
+    system_prompt_extension: document.getElementById("spe").value||"",
+  };
+  document.getElementById("json-preview").textContent = JSON.stringify(obj, null, 2);
+}
+
+async function saveSkillFile() {
+  const body = {
+    org_id: document.getElementById("org-id").value.trim(),
+    display_name: document.getElementById("display-name").value.trim(),
+    org_type: document.getElementById("org-type").value,
+    system_prompt_extension: document.getElementById("spe").value.trim(),
+  };
+  if (!body.org_id) { alert("Org ID is required"); return; }
+  try {
+    const r = await fetch("/sarabox/skillfile", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body) });
+    const d = await r.json();
+    document.getElementById("save-status").textContent = "Saved ✓";
+    document.getElementById("save-result").textContent = `skillfile_id: ${d.skillfile_id||"—"} | sha3: ${(d.sha3_hash||"").slice(0,16)}…`;
+    setTimeout(()=>document.getElementById("save-status").textContent="", 3000);
+  } catch(e) { document.getElementById("save-result").textContent = "Error: "+e.message; }
+}
+
+async function loadSkillFile() {
+  const orgId = document.getElementById("org-id").value.trim();
+  if (!orgId) { alert("Enter an Org ID first"); return; }
+  try {
+    const r = await fetch(`/sarabox/skillfile/${encodeURIComponent(orgId)}`);
+    if (!r.ok) { alert("Not found"); return; }
+    const d = await r.json();
+    document.getElementById("display-name").value = d.display_name||"";
+    document.getElementById("org-type").value = d.org_type||"dao";
+    document.getElementById("spe").value = d.system_prompt_extension||"";
+    updatePreview();
+  } catch(e) { alert("Load failed: "+e.message); }
+}
+
+// ── Taxonomy Preview ──────────────────────────────────────────────────────────
+
+async function loadTaxonomy() {
+  const orgType = document.getElementById("taxonomy-org-type").value;
+  document.getElementById("cat-grid").innerHTML = '<div style="color:var(--text2);">Loading…</div>';
+  try {
+    const r = await fetch(`/sarabox/taxonomy/${encodeURIComponent(orgType)}`);
+    const d = await r.json();
+    const cats = d.categories || [];
+    document.getElementById("cat-grid").innerHTML = cats.length ? cats.map((c,i) => `
+      <div class="cat-card" id="cc-${i}" onclick="toggleCat(${i})">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+          <span class="cat-name">${esc(c.name)}</span>
+          <span class="sev-badge sev-${esc(c.severity)}">${esc(c.severity||"medium").toUpperCase()}</span>
+        </div>
+        <div class="cat-desc">${esc(c.description)}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <code style="font-size:10px;color:var(--text2);">${esc(c.id)}</code>
+          <span class="${c.auto_stop?'auto-stop-yes':'auto-stop-no'}">${c.auto_stop?'⛔ AUTO-STOP':'—'}</span>
+        </div>
+        <div class="cat-detail" id="cd-${i}">
+          ${c.indicators && c.indicators.length ? `
+            <div style="font-size:10px;font-weight:600;color:var(--text2);margin-bottom:4px;">INDICATORS</div>
+            <ul class="indicator-list">${c.indicators.map(ind=>`<li>[${esc(ind.match_type||'regex')}] ${esc(ind.pattern||ind)}</li>`).join("")}</ul>` : ""}
+          ${c.chain_targets && c.chain_targets.length ? `
+            <div style="font-size:10px;font-weight:600;color:var(--text2);margin-top:6px;margin-bottom:4px;">CHAIN TARGETS</div>
+            <ul class="indicator-list">${c.chain_targets.map(ct=>`<li>${esc(ct.category_id)} (${(ct.transition_prob*100).toFixed(0)}%)</li>`).join("")}</ul>` : ""}
+        </div>
+      </div>`).join("") : '<div style="color:var(--text2);">No categories found.</div>';
+  } catch(e) { document.getElementById("cat-grid").innerHTML = `<div style="color:var(--red)">${e.message}</div>`; }
+}
+
+function toggleCat(i) {
+  const card = document.getElementById("cc-"+i);
+  card.classList.toggle("expanded");
+}
+
+// ── Classification Tester ─────────────────────────────────────────────────────
+
+async function runClassify() {
+  const prompt = document.getElementById("classify-prompt").value.trim();
+  const orgId = document.getElementById("classify-org-id").value.trim();
+  if (!prompt) { document.getElementById("classify-error").textContent = "Prompt is required."; return; }
+  document.getElementById("classify-error").textContent = "";
+  document.getElementById("classify-btn").textContent = "Testing…";
+  document.getElementById("classify-btn").disabled = true;
+  try {
+    const r = await fetch("/sarabox/classify", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ org_id: orgId||"default", prompt })
+    });
+    const d = await r.json();
+    showClassifyResult(d);
+  } catch(e) { document.getElementById("classify-error").textContent = "Error: "+e.message; }
+  document.getElementById("classify-btn").textContent = "Test →";
+  document.getElementById("classify-btn").disabled = false;
+}
+
+function showClassifyResult(d) {
+  const label = (d.label||"safe").toLowerCase();
+  const conf = Math.round((d.confidence||0)*100);
+  const resultBox = document.getElementById("classify-result");
+  const badge = document.getElementById("result-badge");
+  resultBox.className = "result-box label-" + label;
+  resultBox.style.display = "block";
+  badge.className = "label-badge badge-" + label;
+  badge.textContent = label.toUpperCase();
+  document.getElementById("result-category").textContent = d.matched_category||"—";
+  document.getElementById("result-conf-pct").textContent = conf+"%";
+  const gauge = document.getElementById("result-gauge");
+  gauge.style.width = conf+"%";
+  gauge.className = "gauge-fill " + (conf<60?"gauge-green":conf<85?"gauge-amber":"gauge-red");
+  document.getElementById("result-explanation").textContent = d.explanation||"No explanation provided.";
+  document.getElementById("result-raw").textContent = JSON.stringify(d, null, 2);
+  document.getElementById("classify-placeholder").style.display = "none";
+  resultBox.classList.add("flash");
+  setTimeout(()=>resultBox.classList.remove("flash"), 500);
+}
+
+function toggleRaw() {
+  const el = document.getElementById("result-raw");
+  const toggle = document.querySelector(".raw-toggle");
+  const shown = el.style.display === "block";
+  el.style.display = shown ? "none" : "block";
+  toggle.textContent = shown ? "Show Raw Response ▾" : "Hide Raw Response ▴";
+}
+
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// Init
+updatePreview();
+loadTaxonomy();
+</script>
+</body>
+</html>

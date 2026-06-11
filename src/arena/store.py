@@ -1,0 +1,824 @@
+"""
+ClickHouse-backed persistent store for the Sandbox Arena.
+
+Replaces the in-memory dicts from the prototype with durable storage.
+All arena state — bounties, submissions, evaluations, attack history,
+and the leaderboard — is persisted to ClickHouse tables.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import time
+from typing import TYPE_CHECKING, Any
+
+from src.arena.models import (
+    AttackPrompt,
+    Bounty,
+    BountyStatus,
+    EvaluationResult,
+    PromptEvaluation,
+    Submission,
+    SubmissionStatus,
+)
+from src.clickhouse.clickhouse import Clickhouse
+
+if TYPE_CHECKING:
+    from src.ozone.ozone import EnforcementResult
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# DDL for arena tables. Run once on startup via ReplacingMergeTree.
+# ---------------------------------------------------------------------------
+
+ARENA_DDL = [
+    "CREATE DATABASE IF NOT EXISTS arena",
+    """
+    CREATE TABLE IF NOT EXISTS arena.bounties (
+        bounty_id        String,
+        funder_wallet    String,
+        target_model_endpoint String,
+        target_model_name String,
+        categories       Array(String),
+        pool_usdc        Float64,
+        remaining_usdc   Float64,
+        max_payout_per_finding Float64,
+        created_at       Float64,
+        expires_at       Nullable(Float64),
+        status           String
+    ) ENGINE = ReplacingMergeTree()
+      ORDER BY bounty_id
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.submissions (
+        submission_id    String,
+        bounty_id        String,
+        teamer_wallet    String,
+        prompts_json     String,
+        submitted_at     Float64,
+        status           String,
+        commitment_hash  String DEFAULT ''
+    ) ENGINE = ReplacingMergeTree()
+      ORDER BY submission_id
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.evaluations (
+        submission_id    String,
+        bounty_id        String,
+        evaluations_json String,
+        total_score      Float64,
+        payout_usdc      Float64,
+        category_coverage String,
+        duplicate_penalty Float64,
+        evaluated_at     Float64,
+        tx_hash          String DEFAULT '',
+        prev_hash        String DEFAULT ''
+    ) ENGINE = ReplacingMergeTree()
+      ORDER BY submission_id
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.attack_history (
+        prompt_hash      String,
+        prompt_text      String,
+        category         String,
+        first_seen       Float64,
+        times_submitted  UInt32,
+        avg_severity     Float32 DEFAULT 0,
+        last_submission_id String DEFAULT ''
+    ) ENGINE = ReplacingMergeTree(times_submitted)
+      ORDER BY prompt_hash
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.leaderboard (
+        wallet           String,
+        total_score      Float64,
+        total_payout     Float64,
+        submissions_count UInt32,
+        successful_attacks UInt32,
+        last_submission_at Float64
+    ) ENGINE = ReplacingMergeTree(submissions_count)
+      ORDER BY wallet
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.payment_log (
+        tx_hash          String,
+        timestamp        Float64,
+        from_wallet      String,
+        to_wallet        String,
+        amount_usdc      Float64,
+        payment_type     String,
+        submission_id    String DEFAULT '',
+        bounty_id        String DEFAULT ''
+    ) ENGINE = MergeTree()
+      ORDER BY (timestamp, tx_hash)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.enforcement_log (
+        enforcement_id    String,
+        subject           String,
+        label             String,
+        action            String,
+        mode              String,
+        verdict           String,
+        severity          UInt8,
+        confidence        Float32,
+        rule_triggered    String,
+        requires_human_review UInt8 DEFAULT 0,
+        rollback_eligible UInt8 DEFAULT 0,
+        rollback_reason   String DEFAULT '',
+        timestamp_ms      Int64,
+        created_at        DateTime DEFAULT now()
+    ) ENGINE = MergeTree()
+      ORDER BY (timestamp_ms, enforcement_id)
+      PARTITION BY toYYYYMM(created_at)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.rule_performance_metrics (
+        rule_name         String,
+        label             String,
+        window_start      DateTime,
+        window_end        DateTime,
+        total_enforcements UInt32,
+        confirmed_violations UInt32,
+        false_positives   UInt32,
+        false_positive_rate Float32,
+        auto_rollback_triggered UInt8 DEFAULT 0,
+        updated_at        DateTime DEFAULT now()
+    ) ENGINE = ReplacingMergeTree(updated_at)
+      ORDER BY (rule_name, label, window_start)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS arena.attestations (
+        attestation_id    String,
+        commitment_id     String,
+        bounty_id         String,
+        sheila_decision   String,
+        sheila_category   String DEFAULT '',
+        confidence        Float32,
+        reward_alpha      Float32,
+        reward_beta       Float32,
+        reward_gamma      Float32,
+        reward_delta      Float32,
+        final_score       Float32,
+        timestamp_ms      Int64,
+        public_key_id     String,
+        signature         String DEFAULT '',
+        prev_hash         String DEFAULT '',
+        commitment        String DEFAULT '',
+        created_at        DateTime DEFAULT now()
+    ) ENGINE = MergeTree()
+      ORDER BY (timestamp_ms, attestation_id)
+      PARTITION BY toYYYYMM(created_at)
+    """,
+]
+
+
+class ArenaStore:
+    """
+    Persistent store backed by ClickHouse.
+
+    Uses ReplacingMergeTree so upserts (INSERT with same ORDER BY key)
+    replace the previous row on merge. FINAL keyword in SELECTs ensures
+    we always read the latest version.
+    """
+
+    def __init__(self, clickhouse: Clickhouse) -> None:
+        self._ch = clickhouse
+
+    async def initialize(self) -> None:
+        """Create arena database and tables if they don't exist."""
+        for ddl in ARENA_DDL:
+            try:
+                await self._ch.query(ddl.strip())
+            except Exception:
+                logger.warning("DDL may already exist: %s", ddl[:80], exc_info=True)
+        logger.info("Arena ClickHouse tables initialized")
+
+    # ------------------------------------------------------------------
+    # Bounties
+    # ------------------------------------------------------------------
+
+    async def save_bounty(self, bounty: Bounty) -> None:
+        cats = "','".join(_esc(c) for c in bounty.categories)
+        expires = str(bounty.expires_at) if bounty.expires_at else "NULL"
+        sql = f"""
+            INSERT INTO arena.bounties VALUES (
+                '{_esc(bounty.bounty_id)}',
+                '{_esc(bounty.funder_wallet)}',
+                '{_esc(bounty.target_model_endpoint)}',
+                '{_esc(bounty.target_model_name)}',
+                ['{cats}'],
+                {bounty.pool_usdc},
+                {bounty.remaining_usdc},
+                {bounty.max_payout_per_finding},
+                {bounty.created_at},
+                {expires},
+                '{bounty.status.value}'
+            )
+        """
+        await self._ch.query(sql)
+
+    async def get_bounty(self, bounty_id: str) -> Bounty | None:
+        sql = f"""
+            SELECT * FROM arena.bounties FINAL
+            WHERE bounty_id = '{_esc(bounty_id)}'
+            LIMIT 1
+        """
+        resp = await self._ch.query(sql)
+        rows = resp.result_rows  # type: ignore
+        if not rows:
+            return None
+        return _row_to_bounty(rows[0])
+
+    async def list_active_bounties(self) -> list[Bounty]:
+        sql = """
+            SELECT * FROM arena.bounties FINAL
+            WHERE status = 'active' AND remaining_usdc > 0
+            ORDER BY created_at DESC
+        """
+        resp = await self._ch.query(sql)
+        return [_row_to_bounty(r) for r in resp.result_rows]  # type: ignore
+
+    # ------------------------------------------------------------------
+    # Submissions
+    # ------------------------------------------------------------------
+
+    async def save_submission(self, sub: Submission) -> None:
+        prompts_json = json.dumps([p.model_dump() for p in sub.prompts])
+        sql = f"""
+            INSERT INTO arena.submissions VALUES (
+                '{_esc(sub.submission_id)}',
+                '{_esc(sub.bounty_id)}',
+                '{_esc(sub.teamer_wallet)}',
+                '{_esc(prompts_json)}',
+                {sub.submitted_at},
+                '{sub.status.value}',
+                '{_esc(sub.commitment_hash)}'
+            )
+        """
+        await self._ch.query(sql)
+
+    async def get_submission(self, submission_id: str) -> Submission | None:
+        sql = f"""
+            SELECT * FROM arena.submissions FINAL
+            WHERE submission_id = '{_esc(submission_id)}'
+            LIMIT 1
+        """
+        resp = await self._ch.query(sql)
+        rows = resp.result_rows  # type: ignore
+        if not rows:
+            return None
+        return _row_to_submission(rows[0])
+
+    # ------------------------------------------------------------------
+    # Evaluations
+    # ------------------------------------------------------------------
+
+    async def save_evaluation(self, ev: EvaluationResult, tx_hash: str = "", prev_hash: str = "") -> None:
+        evals_json = json.dumps([e.model_dump() for e in ev.prompt_evaluations])
+        cov_json = json.dumps(ev.category_coverage)
+        # CAT-05 GDPR: raw inputs never stored, only SHA3-256 hash
+        evals_hash = hashlib.sha3_256(evals_json.encode()).hexdigest()
+        sql = f"""
+            INSERT INTO arena.evaluations VALUES (
+                '{_esc(ev.submission_id)}',
+                '{_esc(ev.bounty_id)}',
+                '{_esc(evals_hash)}',
+                {ev.total_score},
+                {ev.payout_usdc},
+                '{_esc(cov_json)}',
+                {ev.duplicate_penalty},
+                {ev.evaluated_at},
+                '{_esc(tx_hash)}',
+                '{_esc(prev_hash)}'
+            )
+        """
+        await self._ch.query(sql)
+
+    async def get_evaluation(self, submission_id: str) -> EvaluationResult | None:
+        sql = f"""
+            SELECT * FROM arena.evaluations FINAL
+            WHERE submission_id = '{_esc(submission_id)}'
+            LIMIT 1
+        """
+        resp = await self._ch.query(sql)
+        rows = resp.result_rows  # type: ignore
+        if not rows:
+            return None
+        return _row_to_evaluation(rows[0])
+
+    # ------------------------------------------------------------------
+    # Attack history (novelty scoring via ngramDistance)
+    # ------------------------------------------------------------------
+
+    async def record_attack(
+        self,
+        prompt_hash: str,
+        prompt_text: str,
+        category: str,
+        severity: float,
+        submission_id: str,
+    ) -> None:
+        sql = f"""
+            INSERT INTO arena.attack_history VALUES (
+                '{_esc(prompt_hash)}',
+                '{_esc(prompt_text[:5000])}',
+                '{_esc(category)}',
+                {time.time()},
+                1,
+                {severity},
+                '{_esc(submission_id)}'
+            )
+        """
+        await self._ch.query(sql)
+
+    async def compute_novelty(self, prompt_text: str, threshold: float = 0.3) -> dict[str, Any]:
+        """
+        Compute novelty via ClickHouse ngramDistance against the full
+        attack history. Returns 1.0 for novel, 0.0 for exact duplicate.
+        """
+        escaped = _esc(prompt_text)
+        sql = f"""
+            SELECT
+                prompt_text,
+                category,
+                ngramDistance(prompt_text, '{escaped}') AS distance,
+                times_submitted
+            FROM arena.attack_history FINAL
+            WHERE ngramDistance(prompt_text, '{escaped}') < {threshold}
+            ORDER BY distance ASC
+            LIMIT 10
+        """
+        try:
+            resp = await self._ch.query(sql)
+            similar = []
+            for row in resp.result_rows:  # type: ignore
+                similar.append({
+                    "prompt_preview": str(row[0])[:100],
+                    "category": str(row[1]),
+                    "distance": round(float(row[2]), 4),
+                    "times_submitted": int(row[3]),
+                })
+
+            if not similar:
+                return {"novelty_score": 1.0, "similar_count": 0, "similar_prompts": []}
+
+            closest = similar[0]["distance"]
+            novelty = min(1.0, closest / threshold)
+            return {
+                "novelty_score": round(novelty, 4),
+                "similar_count": len(similar),
+                "similar_prompts": similar,
+            }
+        except Exception:
+            logger.warning("Novelty query failed; assuming full novelty", exc_info=True)
+            return {"novelty_score": 1.0, "similar_count": 0, "similar_prompts": []}
+
+    # ------------------------------------------------------------------
+    # Leaderboard
+    # ------------------------------------------------------------------
+
+    async def update_leaderboard(
+        self,
+        wallet: str,
+        score_delta: float,
+        payout_delta: float,
+        successful_attacks: int,
+    ) -> None:
+        current = await self._get_leaderboard_entry(wallet)
+        sql = f"""
+            INSERT INTO arena.leaderboard VALUES (
+                '{_esc(wallet)}',
+                {current['total_score'] + score_delta},
+                {current['total_payout'] + payout_delta},
+                {current['submissions_count'] + 1},
+                {current['successful_attacks'] + successful_attacks},
+                {time.time()}
+            )
+        """
+        await self._ch.query(sql)
+
+    async def _get_leaderboard_entry(self, wallet: str) -> dict[str, Any]:
+        sql = f"""
+            SELECT total_score, total_payout, submissions_count, successful_attacks
+            FROM arena.leaderboard FINAL
+            WHERE wallet = '{_esc(wallet)}'
+            LIMIT 1
+        """
+        try:
+            resp = await self._ch.query(sql)
+            rows = resp.result_rows  # type: ignore
+            if rows:
+                return {
+                    "total_score": float(rows[0][0]),
+                    "total_payout": float(rows[0][1]),
+                    "submissions_count": int(rows[0][2]),
+                    "successful_attacks": int(rows[0][3]),
+                }
+        except Exception:
+            pass
+        return {"total_score": 0, "total_payout": 0, "submissions_count": 0, "successful_attacks": 0}
+
+    async def get_leaderboard(self, limit: int = 100) -> list[dict[str, Any]]:
+        sql = f"""
+            SELECT wallet, total_score, total_payout, submissions_count,
+                   successful_attacks
+            FROM arena.leaderboard FINAL
+            ORDER BY total_score DESC
+            LIMIT {limit}
+        """
+        resp = await self._ch.query(sql)
+        entries = []
+        for i, row in enumerate(resp.result_rows):  # type: ignore
+            entries.append({
+                "rank": i + 1,
+                "wallet": str(row[0]),
+                "total_score": round(float(row[1]), 4),
+                "total_payout": round(float(row[2]), 4),
+                "submissions_count": int(row[3]),
+                "successful_attacks": int(row[4]),
+            })
+        return entries
+
+    # ------------------------------------------------------------------
+    # Payment log
+    # ------------------------------------------------------------------
+
+    async def log_payment(
+        self,
+        tx_hash: str,
+        from_wallet: str,
+        to_wallet: str,
+        amount_usdc: float,
+        payment_type: str,
+        submission_id: str = "",
+        bounty_id: str = "",
+    ) -> None:
+        sql = f"""
+            INSERT INTO arena.payment_log VALUES (
+                '{_esc(tx_hash)}',
+                {time.time()},
+                '{_esc(from_wallet)}',
+                '{_esc(to_wallet)}',
+                {amount_usdc},
+                '{_esc(payment_type)}',
+                '{_esc(submission_id)}',
+                '{_esc(bounty_id)}'
+            )
+        """
+        await self._ch.query(sql)
+
+    # ------------------------------------------------------------------
+    # Coverage stats (aggregated from evaluations)
+    # ------------------------------------------------------------------
+
+    # ------------------------------------------------------------------
+    # Ozone enforcement log
+    # ------------------------------------------------------------------
+
+    async def save_enforcement_result(self, result: "EnforcementResult") -> None:
+        sql = f"""
+            INSERT INTO arena.enforcement_log (
+                enforcement_id, subject, label, action, mode, verdict,
+                severity, confidence, rule_triggered,
+                requires_human_review, rollback_eligible, rollback_reason,
+                timestamp_ms
+            ) VALUES (
+                '{_esc(result.enforcement_id)}',
+                '{_esc(result.subject)}',
+                '{_esc(result.label)}',
+                '{_esc(result.action)}',
+                '{_esc(result.mode.value)}',
+                '{_esc(result.verdict)}',
+                {result.severity},
+                {result.confidence},
+                '{_esc(result.rule_triggered)}',
+                {int(result.requires_human_review)},
+                {int(result.rollback_eligible)},
+                '',
+                {result.timestamp_ms}
+            )
+        """
+        await self._ch.query(sql)
+
+    async def get_enforcement_by_id(self, enforcement_id: str) -> dict[str, Any] | None:
+        sql = f"""
+            SELECT
+                enforcement_id, subject, label, action, mode, verdict,
+                severity, confidence, rule_triggered,
+                requires_human_review, rollback_eligible, timestamp_ms
+            FROM arena.enforcement_log
+            WHERE enforcement_id = '{_esc(enforcement_id)}'
+            ORDER BY timestamp_ms DESC
+            LIMIT 1
+        """
+        resp = await self._ch.query(sql)
+        rows = resp.result_rows  # type: ignore
+        if not rows:
+            return None
+        row = rows[0]
+        return {
+            "enforcement_id": str(row[0]),
+            "subject": str(row[1]),
+            "label": str(row[2]),
+            "action": str(row[3]),
+            "mode": str(row[4]),
+            "verdict": str(row[5]),
+            "severity": int(row[6]),
+            "confidence": float(row[7]),
+            "rule_triggered": str(row[8]),
+            "requires_human_review": bool(row[9]),
+            "rollback_eligible": bool(row[10]),
+            "timestamp_ms": int(row[11]),
+        }
+
+    async def get_false_positive_rate(self, label: str, window_hours: int = 24) -> float:
+        sql = f"""
+            SELECT
+                sum(false_positives) AS fp,
+                sum(total_enforcements) AS total
+            FROM arena.rule_performance_metrics FINAL
+            WHERE label = '{_esc(label)}'
+              AND window_start >= now() - INTERVAL {window_hours} HOUR
+        """
+        try:
+            resp = await self._ch.query(sql)
+            rows = resp.result_rows  # type: ignore
+            if rows and rows[0][1] and int(rows[0][1]) > 0:
+                return float(rows[0][0]) / float(rows[0][1])
+        except Exception:
+            logger.warning("Failed to query false-positive rate for label=%s", label, exc_info=True)
+        return 0.0
+
+    async def update_rule_metrics(
+        self,
+        rule_name: str,
+        label: str,
+        is_false_positive: bool,
+    ) -> None:
+        now_sql = "now()"
+        fp_increment = 1 if is_false_positive else 0
+        sql = f"""
+            INSERT INTO arena.rule_performance_metrics (
+                rule_name, label, window_start, window_end,
+                total_enforcements, confirmed_violations, false_positives,
+                false_positive_rate, auto_rollback_triggered
+            )
+            SELECT
+                '{_esc(rule_name)}',
+                '{_esc(label)}',
+                toStartOfHour({now_sql}),
+                toStartOfHour({now_sql}) + INTERVAL 1 HOUR,
+                COALESCE(total_enforcements, 0) + 1,
+                COALESCE(confirmed_violations, 0) + {1 - fp_increment},
+                COALESCE(false_positives, 0) + {fp_increment},
+                (COALESCE(false_positives, 0) + {fp_increment}) /
+                    (COALESCE(total_enforcements, 0) + 1),
+                0
+            FROM (
+                SELECT
+                    argMax(total_enforcements, updated_at) AS total_enforcements,
+                    argMax(confirmed_violations, updated_at) AS confirmed_violations,
+                    argMax(false_positives, updated_at) AS false_positives
+                FROM arena.rule_performance_metrics FINAL
+                WHERE rule_name = '{_esc(rule_name)}'
+                  AND label = '{_esc(label)}'
+                  AND window_start = toStartOfHour({now_sql})
+            )
+        """
+        try:
+            await self._ch.query(sql)
+        except Exception:
+            logger.warning(
+                "Failed to update rule metrics rule=%s label=%s", rule_name, label, exc_info=True
+            )
+
+    # ------------------------------------------------------------------
+    # Coverage stats (aggregated from evaluations)
+    # ------------------------------------------------------------------
+
+    async def get_category_coverage(self) -> dict[str, int]:
+        sql = """
+            SELECT category_coverage FROM arena.evaluations FINAL
+        """
+        try:
+            resp = await self._ch.query(sql)
+            merged: dict[str, int] = {}
+            for row in resp.result_rows:  # type: ignore
+                cov = json.loads(str(row[0]))
+                for cat, count in cov.items():
+                    merged[cat] = merged.get(cat, 0) + int(count)
+            return merged
+        except Exception:
+            return {}
+
+    # ------------------------------------------------------------------
+    # Admin helpers
+    # ------------------------------------------------------------------
+
+    async def list_payments(self, limit: int = 100) -> list[dict[str, Any]]:
+        sql = f"""
+            SELECT tx_hash, timestamp, from_wallet, to_wallet,
+                   amount_usdc, payment_type, submission_id, bounty_id
+            FROM arena.payment_log
+            ORDER BY timestamp DESC
+            LIMIT {limit}
+        """
+        try:
+            resp = await self._ch.query(sql)
+            return [
+                {
+                    "tx_hash": str(r[0]),
+                    "timestamp": float(r[1]),
+                    "from_wallet": str(r[2]),
+                    "to_wallet": str(r[3]),
+                    "amount_usdc": round(float(r[4]), 6),
+                    "payment_type": str(r[5]),
+                    "submission_id": str(r[6]),
+                    "bounty_id": str(r[7]),
+                }
+                for r in resp.result_rows  # type: ignore
+            ]
+        except Exception:
+            logger.warning("list_payments query failed", exc_info=True)
+            return []
+
+    async def list_all_bounties(self) -> list[Bounty]:
+        sql = """
+            SELECT * FROM arena.bounties FINAL
+            ORDER BY created_at DESC
+            LIMIT 200
+        """
+        try:
+            resp = await self._ch.query(sql)
+            return [_row_to_bounty(r) for r in resp.result_rows]  # type: ignore
+        except Exception:
+            logger.warning("list_all_bounties query failed", exc_info=True)
+            return []
+
+    async def list_stalled_submissions(self, older_than_seconds: int = 60) -> list[dict[str, Any]]:
+        cutoff = time.time() - older_than_seconds
+        sql = f"""
+            SELECT submission_id, bounty_id, teamer_wallet, submitted_at, status
+            FROM arena.submissions FINAL
+            WHERE status IN ('queued', 'evaluating')
+              AND submitted_at < {cutoff}
+            ORDER BY submitted_at ASC
+            LIMIT 50
+        """
+        try:
+            resp = await self._ch.query(sql)
+            import time as _time
+            now = _time.time()
+            return [
+                {
+                    "submission_id": str(r[0]),
+                    "bounty_id": str(r[1]),
+                    "researcher_wallet": str(r[2]),
+                    "submitted_at": float(r[3]),
+                    "status": str(r[4]),
+                    "age_seconds": int(now - float(r[3])),
+                }
+                for r in resp.result_rows  # type: ignore
+            ]
+        except Exception:
+            logger.warning("list_stalled_submissions query failed", exc_info=True)
+            return []
+
+    async def pause_bounty(self, bounty_id: str) -> bool:
+        bounty = await self.get_bounty(bounty_id)
+        if not bounty:
+            return False
+        bounty.status = BountyStatus.PAUSED
+        await self.save_bounty(bounty)
+        return True
+
+    async def resume_bounty(self, bounty_id: str) -> bool:
+        bounty = await self.get_bounty(bounty_id)
+        if not bounty:
+            return False
+        if bounty.remaining_usdc > 0:
+            bounty.status = BountyStatus.ACTIVE
+        else:
+            bounty.status = BountyStatus.EXHAUSTED
+        await self.save_bounty(bounty)
+        return True
+
+    async def topup_bounty(self, bounty_id: str, amount_usdc: float) -> bool:
+        bounty = await self.get_bounty(bounty_id)
+        if not bounty:
+            return False
+        bounty.pool_usdc += amount_usdc
+        bounty.remaining_usdc += amount_usdc
+        if bounty.status in (BountyStatus.EXHAUSTED, BountyStatus.PAUSED):
+            bounty.status = BountyStatus.ACTIVE
+        await self.save_bounty(bounty)
+        return True
+
+    async def requeue_submission(self, submission_id: str) -> bool:
+        sub = await self.get_submission(submission_id)
+        if not sub:
+            return False
+        sub.status = SubmissionStatus.QUEUED
+        await self.save_submission(sub)
+        return True
+
+    # ------------------------------------------------------------------
+    # ZK Audit Trail — L2 attestations
+    # ------------------------------------------------------------------
+
+    async def insert_attestation(self, attestation: Any, commitment: Any) -> None:
+        """
+        Persist an EvaluationAttestation (L2) linked to a CommitmentRecord (L1).
+        Both records are stored together for the full ZK audit trail.
+        """
+        try:
+            sql = f"""
+                INSERT INTO arena.attestations (
+                    attestation_id, commitment_id, bounty_id,
+                    sheila_decision, sheila_category, confidence,
+                    reward_alpha, reward_beta, reward_gamma, reward_delta,
+                    final_score, timestamp_ms, public_key_id, signature,
+                    prev_hash, commitment
+                ) VALUES (
+                    '{_esc(attestation.attestation_id)}',
+                    '{_esc(attestation.commitment_id)}',
+                    '{_esc(attestation.bounty_id)}',
+                    '{_esc(attestation.sheila_decision)}',
+                    '{_esc(attestation.sheila_category or "")}',
+                    {attestation.confidence},
+                    {attestation.reward_alpha},
+                    {attestation.reward_beta},
+                    {attestation.reward_gamma},
+                    {attestation.reward_delta},
+                    {attestation.final_score},
+                    {attestation.timestamp_ms},
+                    '{_esc(attestation.public_key_id)}',
+                    '{_esc(attestation.signature or "")}',
+                    '{_esc(commitment.prev_hash or "")}',
+                    '{_esc(commitment.commitment)}'
+                )
+            """
+            await self._ch.query(sql)
+        except Exception:
+            logger.warning(
+                "insert_attestation failed for %s", attestation.attestation_id, exc_info=True
+            )
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _esc(s: str) -> str:
+    """Escape for ClickHouse SQL string literals."""
+    return s.replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _row_to_bounty(row: tuple) -> Bounty:
+    return Bounty(
+        bounty_id=str(row[0]),
+        funder_wallet=str(row[1]),
+        target_model_endpoint=str(row[2]),
+        target_model_name=str(row[3]),
+        categories=list(row[4]) if row[4] else [],
+        pool_usdc=float(row[5]),
+        remaining_usdc=float(row[6]),
+        max_payout_per_finding=float(row[7]),
+        created_at=float(row[8]),
+        expires_at=float(row[9]) if row[9] is not None else None,
+        status=BountyStatus(str(row[10])),
+    )
+
+
+def _row_to_submission(row: tuple) -> Submission:
+    prompts_data = json.loads(str(row[3]))
+    prompts = [AttackPrompt(**p) for p in prompts_data]
+    return Submission(
+        submission_id=str(row[0]),
+        bounty_id=str(row[1]),
+        teamer_wallet=str(row[2]),
+        prompts=prompts,
+        submitted_at=float(row[4]),
+        status=SubmissionStatus(str(row[5])),
+        commitment_hash=str(row[6]) if len(row) > 6 else "",
+    )
+
+
+def _row_to_evaluation(row: tuple) -> EvaluationResult:
+    evals_data = json.loads(str(row[2]))
+    prompt_evals = [PromptEvaluation(**e) for e in evals_data]
+    category_cov = json.loads(str(row[5]))
+    return EvaluationResult(
+        submission_id=str(row[0]),
+        bounty_id=str(row[1]),
+        prompt_evaluations=prompt_evals,
+        total_score=float(row[3]),
+        payout_usdc=float(row[4]),
+        category_coverage=category_cov,
+        duplicate_penalty=float(row[6]),
+        evaluated_at=float(row[7]),
+    )

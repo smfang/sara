@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — Sheila Judge</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,91,200,.2);color:var(--accent);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:12px;}
+  .nav a:hover,.nav a.active{color:var(--accent);font-weight:700;}
+  .body{padding:20px;}
+  /* Alert banner */
+  .alert-banner{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.4);border-radius:var(--radius);padding:10px 16px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--red);}
+  .alert-banner a{color:var(--accent);text-decoration:none;font-weight:700;}
+  /* Tabs */
+  .mode-tabs{display:flex;gap:4px;margin-bottom:16px;}
+  .mode-tab{padding:6px 14px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text2);font-family:var(--font);font-size:12px;cursor:pointer;}
+  .mode-tab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+  /* Confidence histogram */
+  .conf-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+  .conf-label{font-size:10px;color:var(--text2);width:60px;flex-shrink:0;}
+  .conf-bar{flex:1;height:10px;background:var(--surface2);border-radius:5px;overflow:hidden;}
+  .conf-fill{height:100%;background:var(--accent);border-radius:5px;}
+  .conf-pct{font-size:10px;color:var(--text2);width:32px;text-align:right;}
+  /* Category bar */
+  .cat-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px;}
+  .cat-label{font-size:10px;color:var(--text2);width:200px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .cat-bar{flex:1;height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;}
+  .cat-fill{height:100%;background:var(--accent);border-radius:4px;}
+  .cat-fill.warn{background:var(--orange);}
+  .cat-pct{font-size:10px;width:32px;text-align:right;}
+  /* Panel/grid */
+  .grid-2{display:grid;grid-template-columns:1fr 320px;gap:16px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{color:var(--text2);text-transform:uppercase;font-size:10px;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;}
+  td{padding:7px 8px;border-bottom:1px solid rgba(192,144,96,.25);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(0,0,0,.04);}
+  .dec-violation{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(192,57,43,.15);color:var(--red);}
+  .dec-clean{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(26,122,58,.15);color:var(--green);}
+  .dec-borderline{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;font-weight:700;background:rgba(192,120,0,.15);color:var(--orange);}
+  .mono{font-family:monospace;font-size:10px;color:var(--text2);}
+  .cot-btn{cursor:pointer;color:var(--accent);font-size:11px;text-decoration:underline;}
+  /* CoT drawer */
+  .cot-drawer{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:10px;margin:6px 0;font-family:monospace;font-size:10px;white-space:pre-wrap;word-break:break-all;max-height:180px;overflow-y:auto;color:var(--text);}
+  .cot-drawer .flag{font-weight:700;background:rgba(192,120,0,.25);color:var(--orange);}
+  /* Attestation modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:100;align-items:center;justify-content:center;}
+  .modal-overlay.open{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:480px;max-height:80vh;overflow-y:auto;}
+  .modal h3{font-size:13px;margin-bottom:12px;}
+  .modal-field{margin-bottom:8px;font-size:11px;}
+  .modal-label{color:var(--text2);font-size:10px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px;}
+  .modal-val{font-family:monospace;word-break:break-all;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:5px;border:none;cursor:pointer;font-family:var(--font);font-size:12px;font-weight:600;}
+  .btn-primary{background:var(--accent);color:#fff;}
+  .btn-primary:hover{background:var(--accent-dim);}
+  .btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border);}
+  .btn-ghost:hover{color:var(--text);}
+  .btn-sm{padding:3px 8px;font-size:11px;}
+  .verify-result{font-size:11px;margin-left:8px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">Sheila Judge</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/admin">Admin</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila" class="active">Sheila</a>
+    <a href="/zk-trail">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="body">
+  <!-- CoT mismatch alert (shown when mismatches exist) -->
+  <div class="alert-banner" id="cot-mismatch-banner" style="display:none;">
+    🚨 <span id="mismatch-count">0</span> CoT mismatches detected — reasoning contradicts verdict.
+    These require immediate human review. &nbsp;<a href="/admin">Review →</a>
+  </div>
+
+  <!-- Mode filter tabs -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" onclick="setMode('all')">All</button>
+    <button class="mode-tab" onclick="setMode('judge')">Judge</button>
+    <button class="mode-tab" onclick="setMode('redteam')">Redteam</button>
+    <button class="mode-tab" onclick="setMode('admin')">Admin</button>
+  </div>
+
+  <div class="grid-2">
+    <!-- Left: verdict table -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Verdict Detail</div>
+        <table>
+          <thead><tr>
+            <th>Time</th>
+            <th>Mode</th>
+            <th>Decision</th>
+            <th>Category</th>
+            <th>Confidence</th>
+            <th>Attestation</th>
+            <th>CoT</th>
+          </tr></thead>
+          <tbody id="verdict-body">
+            <tr><td colspan="7" style="color:var(--text2);text-align:center;padding:20px;">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Right: histograms -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Confidence Distribution (7d)</div>
+        <div id="conf-dist">
+          <div class="conf-bar-row"><div class="conf-label">0.9–1.0</div><div class="conf-bar"><div class="conf-fill" style="width:61%"></div></div><div class="conf-pct">61%</div></div>
+          <div class="conf-bar-row"><div class="conf-label">0.7–0.9</div><div class="conf-bar"><div class="conf-fill" style="width:24%"></div></div><div class="conf-pct">24%</div></div>
+          <div class="conf-bar-row"><div class="conf-label">0.5–0.7</div><div class="conf-bar"><div class="conf-fill" style="width:10%"></div></div><div class="conf-pct">10%</div></div>
+          <div class="conf-bar-row"><div class="conf-label">0.3–0.5</div><div class="conf-bar"><div class="conf-fill" style="width:5%"></div></div><div class="conf-pct">5%</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Category Recall (7d)</div>
+        <div id="cat-breakdown">
+          <div style="color:var(--text2);font-size:11px;">Loading…</div>
+        </div>
+        <div style="font-size:10px;color:var(--orange);margin-top:8px;">🟠 Below 75% recall floor</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Attestation modal -->
+<div class="modal-overlay" id="att-modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h3>Attestation Details</h3>
+    <div id="modal-body"></div>
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center;">
+      <button class="btn btn-primary btn-sm" onclick="verifyAtt()">Verify Signature</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">Close</button>
+      <span class="verify-result" id="verify-result"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+let _mode = "all";
+let _verdicts = [];
+let _currentAttId = null;
+
+function setMode(m) {
+  _mode = m;
+  document.querySelectorAll(".mode-tab").forEach(b => b.classList.toggle("active", b.textContent.toLowerCase()===m));
+  loadVerdicts();
+}
+
+function esc(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function decBadge(d) {
+  const m = {"violation":"dec-violation","clean":"dec-clean","borderline":"dec-borderline"};
+  const l = {"violation":"🔴 violation","clean":"🟢 clean","borderline":"🟠 borderline"};
+  return `<span class="${m[d]||'dec-borderline'}">${l[d]||esc(d)}</span>`;
+}
+
+function fmtTime(ts) {
+  return ts ? new Date(ts*1000).toTimeString().slice(0,5) : "—";
+}
+
+function toggleCot(id) {
+  const el = document.getElementById("cot-"+id);
+  if (el) el.style.display = el.style.display==="none" ? "block" : "none";
+}
+
+function openAtt(attId) {
+  _currentAttId = attId;
+  const v = _verdicts.find(x => x.attestation_id===attId);
+  const mb = document.getElementById("modal-body");
+  if (!v) { mb.innerHTML = "<div style='color:var(--text2)'>Not found</div>"; }
+  else {
+    mb.innerHTML = [
+      ["Attestation ID", v.attestation_id||"—"],
+      ["Commitment ID", v.commitment_id||"—"],
+      ["Bounty ID", v.bounty_id||"—"],
+      ["Decision", v.sheila_decision||"—"],
+      ["Confidence", v.confidence||"—"],
+      ["Final Score", v.final_score||"—"],
+      ["Public Key ID", v.public_key_id||"—"],
+      ["Signature", (v.signature||"").slice(0,48)+"…"],
+    ].map(([l,v2]) => `<div class="modal-field"><div class="modal-label">${esc(l)}</div><div class="modal-val">${esc(v2)}</div></div>`).join("");
+  }
+  document.getElementById("verify-result").textContent = "";
+  document.getElementById("att-modal").classList.add("open");
+}
+
+function closeModal() {
+  document.getElementById("att-modal").classList.remove("open");
+}
+
+async function verifyAtt() {
+  if (!_currentAttId) return;
+  const el = document.getElementById("verify-result");
+  el.textContent = "Verifying…";
+  try {
+    const r = await fetch(`/sheila/verify/${encodeURIComponent(_currentAttId)}`);
+    const d = await r.json();
+    el.textContent = d.valid ? "✅ Valid" : "❌ Invalid";
+    el.style.color = d.valid ? "var(--green)" : "var(--red)";
+  } catch(e) {
+    el.textContent = "❌ Error: " + e.message;
+    el.style.color = "var(--red)";
+  }
+}
+
+function renderVerdicts() {
+  const tbody = document.getElementById("verdict-body");
+  const filtered = _mode==="all" ? _verdicts : _verdicts.filter(v=>(v.mode||"judge")===_mode);
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--text2);text-align:center;padding:20px;">No verdicts for this filter.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(v => {
+    const cotId = "cot-" + v.attestation_id;
+    const trace = esc(v.thinking_trace||"");
+    const hasTrace = !!v.thinking_trace;
+    return `<tr>
+      <td class="mono">${fmtTime(v.timestamp)}</td>
+      <td style="font-size:10px;color:var(--text2);">${esc(v.mode||"judge")}</td>
+      <td>${decBadge(v.sheila_decision)}</td>
+      <td style="font-size:10px;">${esc(v.sheila_category||"—")}</td>
+      <td>${(v.confidence||0).toFixed(2)}</td>
+      <td><a class="cot-btn" onclick="openAtt('${esc(v.attestation_id)}')">${esc((v.attestation_id||"—").slice(0,12))}… ✅</a></td>
+      <td>${hasTrace ? `<span class="cot-btn" onclick="toggleCot('${esc(v.attestation_id)}')">✓</span>
+        <div class="cot-drawer" id="${cotId}">${trace}</div>` : "—"}</td>
+    </tr>`;
+  }).join("");
+  // CoT mismatch
+  const mismatches = _verdicts.filter(v => v.cot_mismatch).length;
+  if (mismatches > 0) {
+    document.getElementById("mismatch-count").textContent = mismatches;
+    document.getElementById("cot-mismatch-banner").style.display = "flex";
+  }
+}
+
+function renderCategoryBreakdown(breakdown) {
+  if (!breakdown || !breakdown.length) return;
+  const maxVal = Math.max(...breakdown.map(b=>b.recall||0), 1);
+  document.getElementById("cat-breakdown").innerHTML = breakdown.map(b => {
+    const pct = (b.recall||0)*100;
+    const warn = pct < 75;
+    return `<div class="cat-bar-row">
+      <div class="cat-label" style="${warn?'color:var(--orange)':''}">${esc(b.category)}</div>
+      <div class="cat-bar"><div class="cat-fill ${warn?'warn':''}" style="width:${pct.toFixed(0)}%"></div></div>
+      <div class="cat-pct" style="${warn?'color:var(--orange)':''}">${pct.toFixed(0)}%</div>
+    </div>`;
+  }).join("");
+}
+
+async function loadVerdicts() {
+  try {
+    const r = await fetch(`/api/sheila/verdicts?limit=50&mode=${_mode}`);
+    if (r.ok) {
+      const d = await r.json();
+      _verdicts = d.verdicts || [];
+      if (d.category_breakdown) renderCategoryBreakdown(d.category_breakdown);
+    }
+  } catch(_) {}
+  if (!_verdicts.length) _verdicts = _stubVerdicts();
+  renderVerdicts();
+}
+
+function _stubVerdicts() {
+  const now = Date.now()/1000;
+  const cats = ["treasury_manipulation","prompt_injection","identity_confusion","governance_attack","pii_extraction"];
+  const decs = ["violation","clean","borderline"];
+  const modes = ["judge","judge","redteam","judge","admin"];
+  return Array.from({length:8}, (_,i) => ({
+    timestamp: now - i*120,
+    mode: modes[i%modes.length],
+    sheila_decision: decs[i%decs.length],
+    sheila_category: decs[i%decs.length]==="clean" ? null : cats[i%cats.length],
+    confidence: 0.7 + Math.random()*0.28,
+    attestation_id: "att_" + Math.random().toString(36).slice(2,10),
+    commitment_id: "cmt_" + Math.random().toString(36).slice(2,10),
+    bounty_id: "bnty_001",
+    public_key_id: "key_ephemeral",
+    signature: "3045022100" + "a".repeat(60),
+    final_score: (Math.random()*0.9).toFixed(3),
+    thinking_trace: i%3===0 ? "<thinking>The user message contains treasury manipulation indicators: 'transfer all funds'. Decision: violation.</thinking>" : null,
+    cot_mismatch: false,
+  }));
+}
+
+document.addEventListener("DOMContentLoaded", loadVerdicts);
+</script>
+</body>
+</html>

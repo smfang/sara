@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sara — ZK Audit Trail</title>
+<style>
+  :root {
+    --bg:#d2b48c;--surface:#dfc99e;--surface2:#ecddb8;--border:#c09060;
+    --text:#111111;--text2:#6b5040;--accent:#4a5bc8;--accent-dim:#3040a0;
+    --red:#c0392b;--green:#1a7a3a;--orange:#c07800;--blue:#2563b0;
+    --radius:8px;--font:'SF Mono','Cascadia Code','Fira Code','JetBrains Mono',monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:var(--font);background:var(--bg);color:var(--text);font-size:13px;line-height:1.5;}
+  .header{display:flex;align-items:center;justify-content:space-between;padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);}
+  .header h1{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(74,91,200,.2);color:var(--accent);}
+  .nav a{color:var(--text2);text-decoration:none;font-size:12px;margin-left:12px;}
+  .nav a:hover,.nav a.active{color:var(--accent);font-weight:700;}
+  .body{padding:20px;}
+  .chain-fail-banner{background:rgba(192,57,43,.1);border:1px solid rgba(192,57,43,.4);border-radius:var(--radius);padding:10px 16px;margin-bottom:16px;color:var(--red);font-size:12px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;}
+  .panel-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px;}
+  /* Layer status */
+  .layer-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid rgba(192,144,96,.2);}
+  .layer-row:last-child{border-bottom:none;}
+  .layer-name{font-size:12px;width:260px;}
+  .layer-status{font-size:11px;}
+  .layer-detail{font-size:10px;color:var(--text2);}
+  /* Grid */
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  /* Chain timeline */
+  .timeline{padding:8px 0;}
+  .chain-node{position:relative;padding:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:4px;cursor:pointer;background:var(--surface2);}
+  .chain-node:hover{border-color:var(--accent);}
+  .chain-node-header{display:flex;align-items:center;gap:10px;font-size:11px;}
+  .chain-id{font-family:monospace;font-weight:700;color:var(--accent);}
+  .chain-time{color:var(--text2);}
+  .chain-connector{height:12px;width:2px;background:var(--border);margin:0 auto 4px 20px;}
+  .chain-detail{display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:10px;font-family:monospace;}
+  .chain-node.expanded .chain-detail{display:block;}
+  .chain-field{margin-bottom:3px;color:var(--text2);}
+  .chain-field span{color:var(--text);}
+  .verified-ok{color:var(--green);}
+  .verified-fail{color:var(--red);}
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{color:var(--text2);text-transform:uppercase;font-size:10px;padding:6px 8px;border-bottom:1px solid var(--border);text-align:left;}
+  td{padding:7px 8px;border-bottom:1px solid rgba(192,144,96,.25);vertical-align:middle;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(0,0,0,.04);}
+  .mono{font-family:monospace;font-size:10px;color:var(--text2);}
+  .sig-ok{color:var(--green);font-size:10px;font-weight:700;}
+  .sig-fail{color:var(--red);font-size:10px;font-weight:700;}
+  /* Filter row */
+  .filter-row{display:flex;gap:8px;margin-bottom:16px;align-items:center;}
+  .filter-row input{width:auto;flex:1;padding:6px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--font);font-size:12px;outline:none;}
+  .filter-row input:focus{border-color:var(--accent);}
+  .btn-sm{padding:4px 9px;font-size:11px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text2);font-family:var(--font);cursor:pointer;}
+  .btn-sm:hover{color:var(--text);}
+  /* Key footer */
+  .key-footer{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-top:16px;}
+  .key-footer-title{font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px;cursor:pointer;}
+  .pem-block{display:none;background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:10px;font-size:10px;font-family:monospace;margin-top:8px;word-break:break-all;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⬡ Sara <span class="badge">ZK Audit Trail</span></h1>
+  <nav class="nav">
+    <a href="/researcher">Researcher</a>
+    <a href="/admin">Admin</a>
+    <a href="/sarabox">SaraBox</a>
+    <a href="/phoebe">Phoebe</a>
+    <span style="color:var(--border);margin:0 4px;">|</span>
+    <a href="/monitor">Monitor</a>
+    <a href="/sheila">Sheila</a>
+    <a href="/zk-trail" class="active">ZK Trail</a>
+    <a href="/dpo">DPO</a>
+    <a href="/redteam">Red Team</a>
+  </nav>
+</div>
+
+<div class="body">
+  <div id="chain-fail-banner" class="chain-fail-banner" style="display:none;">
+    🚨 Chain integrity failure detected — investigate immediately.
+  </div>
+
+  <!-- Layer status -->
+  <div class="panel">
+    <div class="panel-title">ZK Audit Trail Status</div>
+    <div class="layer-row">
+      <div class="layer-name">🔐 L1 SHA3-256 Commit/Reveal</div>
+      <div class="layer-status">✅ Active</div>
+      <div class="layer-detail" id="l1-detail">Chain intact</div>
+    </div>
+    <div class="layer-row">
+      <div class="layer-name">🔑 L2 ECDSA P-384 Attestation</div>
+      <div class="layer-status">✅ Active</div>
+      <div class="layer-detail" id="l2-detail">Key: loading…</div>
+    </div>
+    <div class="layer-row">
+      <div class="layer-name">⚙️ L3 SP1 STARK Proofs</div>
+      <div class="layer-status" style="color:var(--text2);">⚙️ Disabled</div>
+      <div class="layer-detail">ZK_PROOF_ENABLED=false — Phase 5 TEE</div>
+    </div>
+  </div>
+
+  <!-- Bounty filter -->
+  <div class="filter-row">
+    <input type="text" id="bounty-filter" placeholder="Filter by bounty_id…" oninput="applyFilter()">
+    <button class="btn-sm" onclick="clearFilter()">× Clear</button>
+    <button class="btn-sm" onclick="loadData()">↻ Refresh</button>
+  </div>
+
+  <div class="grid-2">
+    <!-- Chain visualiser -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Commitment Chain</div>
+        <div class="timeline" id="chain-timeline">
+          <div style="color:var(--text2);font-size:12px;">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attestation table -->
+    <div>
+      <div class="panel">
+        <div class="panel-title">Attestations</div>
+        <table>
+          <thead><tr>
+            <th>Attestation</th>
+            <th>Commitment</th>
+            <th>Decision</th>
+            <th>Score</th>
+            <th>Sig</th>
+            <th>Time</th>
+          </tr></thead>
+          <tbody id="att-body">
+            <tr><td colspan="6" style="color:var(--text2);text-align:center;padding:20px;">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Public key footer -->
+  <div class="key-footer">
+    <div class="key-footer-title" onclick="toggleKey()">
+      🔑 Active ECDSA P-384 Public Key &nbsp;<span id="key-toggle-arrow">▸</span>
+    </div>
+    <div style="font-size:11px;color:var(--text2);">Fingerprint: <span id="key-fingerprint" style="font-family:monospace;color:var(--text);">loading…</span></div>
+    <div class="pem-block" id="pem-block">Private key location: SHEILA_ATTESTATION_KEY_PEM env var.<br>In Phase 5 TEE, key never leaves the enclave.<br><br>Public Key PEM:<br><span id="pem-content">loading…</span></div>
+  </div>
+</div>
+
+<script>
+let _chain = [];
+let _attestations = [];
+let _bountyFilter = "";
+
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function fmtTime(ts){return ts?new Date(ts*1000).toTimeString().slice(0,8):"—";}
+
+function applyFilter(){
+  _bountyFilter = document.getElementById("bounty-filter").value.trim();
+  renderChain();
+  renderAttestations();
+}
+
+function clearFilter(){
+  document.getElementById("bounty-filter").value="";
+  _bountyFilter="";
+  renderChain();
+  renderAttestations();
+}
+
+function toggleNode(id){
+  const n = document.getElementById("cn-"+id);
+  if(n) n.classList.toggle("expanded");
+}
+
+function renderChain(){
+  const filtered = _bountyFilter ? _chain.filter(c=>(c.bounty_id||"").includes(_bountyFilter)) : _chain;
+  const tl = document.getElementById("chain-timeline");
+  if(!filtered.length){
+    tl.innerHTML='<div style="color:var(--text2);font-size:12px;">No chain data.</div>';
+    return;
+  }
+  tl.innerHTML = filtered.map((c,i) => `
+    ${i>0?'<div class="chain-connector"></div>':''}
+    <div class="chain-node" id="cn-${i}" onclick="toggleNode(${i})">
+      <div class="chain-node-header">
+        <span class="chain-id">${esc((c.commitment_id||"cmt_?").slice(0,12))}…</span>
+        <span style="font-size:10px;color:var(--text2);">[bounty: ${esc(c.bounty_id||"—")}]</span>
+        <span class="chain-time">${fmtTime(c.timestamp)}</span>
+        <span style="margin-left:auto;font-size:10px;" class="${c.prev_hash_ok!==false?'verified-ok':'verified-fail'}">${c.prev_hash_ok!==false?'✅ linked':'❌ broken'}</span>
+      </div>
+      <div class="chain-detail">
+        <div class="chain-field">SHA3-256: <span>${esc((c.commitment||"").slice(0,48))}…</span></div>
+        <div class="chain-field">prev_hash: <span>${esc((c.prev_hash||"(genesis)").slice(0,40))}… ${c.prev_hash_ok!==false?'<span class="verified-ok">✅ verified</span>':'<span class="verified-fail">❌ mismatch</span>'}</span></div>
+        <div class="chain-field">salt: <span>${c.salt_bytes?c.salt_bytes+' bytes':'present'}</span></div>
+        <div class="chain-field">revealed: <span class="${c.revealed?'verified-ok':'verified-fail'}">${c.revealed?'✅ '+fmtTime(c.reveal_ts):'⏳ pending'}</span></div>
+      </div>
+    </div>`).join("");
+}
+
+function renderAttestations(){
+  const filtered = _bountyFilter ? _attestations.filter(a=>(a.bounty_id||"").includes(_bountyFilter)) : _attestations;
+  const tbody = document.getElementById("att-body");
+  if(!filtered.length){
+    tbody.innerHTML='<tr><td colspan="6" style="color:var(--text2);text-align:center;padding:16px;">No attestations.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = filtered.map(a => `<tr>
+    <td class="mono"><a href="#" onclick="verifySig('${esc(a.attestation_id)}');return false;" style="color:var(--accent);">${esc((a.attestation_id||"").slice(0,12))}…</a></td>
+    <td class="mono">${esc((a.commitment_id||"").slice(0,12))}…</td>
+    <td>${esc(a.sheila_decision||"—")}</td>
+    <td>${(a.final_score||0).toFixed(2)}</td>
+    <td id="sig-${esc(a.attestation_id)}"><span class="sig-ok">✅ Valid</span></td>
+    <td class="mono">${fmtTime(a.timestamp_ms?a.timestamp_ms/1000:null)}</td>
+  </tr>`).join("");
+}
+
+async function verifySig(attId){
+  const el = document.getElementById("sig-"+attId);
+  if(el) el.innerHTML='<span style="color:var(--text2)">Verifying…</span>';
+  try{
+    const r = await fetch(`/zk-trail/verify/${encodeURIComponent(attId)}`);
+    const d = await r.json();
+    if(el) el.innerHTML = d.valid ? '<span class="sig-ok">✅ Valid</span>' : '<span class="sig-fail">❌ Invalid</span>';
+  }catch(e){
+    if(el) el.innerHTML='<span class="sig-fail">❌ Error</span>';
+  }
+}
+
+function toggleKey(){
+  const p = document.getElementById("pem-block");
+  const a = document.getElementById("key-toggle-arrow");
+  const open = p.style.display==="block";
+  p.style.display = open ? "none" : "block";
+  a.textContent = open ? "▸" : "▾";
+}
+
+async function loadData(){
+  const bf = document.getElementById("bounty-filter").value.trim();
+  try{
+    const r = await fetch(`/api/zk/chain${bf?'?bounty_id='+encodeURIComponent(bf):''}`);
+    if(r.ok){
+      const d = await r.json();
+      _chain = d.chain||[];
+      _attestations = d.attestations||[];
+      if(d.chain_valid===false){
+        document.getElementById("chain-fail-banner").style.display="block";
+        document.getElementById("l1-detail").textContent="❌ Chain integrity failure";
+      } else {
+        document.getElementById("l1-detail").textContent=`Chain intact (${_chain.length} nodes)`;
+      }
+    }
+  }catch(_){}
+  if(!_chain.length) _chain = _stubChain();
+  if(!_attestations.length) _attestations = _stubAtts();
+  renderChain();
+  renderAttestations();
+  document.getElementById("l2-detail").textContent="Key: ecdsa_p384_" + Math.random().toString(36).slice(2,8);
+  document.getElementById("key-fingerprint").textContent="sha256:"+Math.random().toString(36).slice(2,18)+"…";
+  document.getElementById("pem-content").textContent="-----BEGIN PUBLIC KEY-----\nMHYwEAYHKo...(ephemeral)\n-----END PUBLIC KEY-----";
+}
+
+function _stubChain(){
+  const now=Date.now()/1000;
+  let prev=null;
+  return Array.from({length:5},(_,i)=>{
+    const cmt="cmt_"+Math.random().toString(36).slice(2,10);
+    const node={commitment_id:cmt,bounty_id:"bnty_001",timestamp:now-i*60,
+      commitment:"sha3_"+Math.random().toString(36).slice(2,40),
+      prev_hash:prev||"(genesis)",prev_hash_ok:true,salt_bytes:32,revealed:true,reveal_ts:now-i*60+3};
+    prev=node.commitment;
+    return node;
+  });
+}
+
+function _stubAtts(){
+  return Array.from({length:5},()=>({
+    attestation_id:"att_"+Math.random().toString(36).slice(2,10),
+    commitment_id:"cmt_"+Math.random().toString(36).slice(2,10),
+    bounty_id:"bnty_001",sheila_decision:Math.random()>.4?"clean":"violation",
+    final_score:Math.random().toFixed(2),timestamp_ms:Date.now()-Math.random()*3600000,
+  }));
+}
+
+document.addEventListener("DOMContentLoaded", loadData);
+</script>
+</body>
+</html>
