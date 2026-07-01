@@ -2,7 +2,7 @@
 Agent configuration — separates persona from framework.
 
 Each agent directory (agents/<name>/config.py) defines an AgentConfig.
-The Agent class consumes this config and knows nothing about Phoebe, Sara,
+The Agent class consumes this config and knows nothing about Sheila, Sara,
 or any other specific persona.
 """
 
@@ -99,7 +99,7 @@ class AgentConfig:
 
     Separate this from the Agent runtime class so that:
     - New agents need only a config file, not code changes
-    - The same framework can host Phoebe, Sara, a governance bot, etc.
+    - The same framework can host Sheila, Sara, a governance bot, etc.
     - Modes map to system prompts without any hardcoded if/elif chains
     """
 

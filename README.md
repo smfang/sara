@@ -49,7 +49,7 @@ in code that _you_ write, not the agent.
 
 ## Tools
 
-Phoebe has access to the following tools, organized by namespace:
+Sheila has access to the following tools, organized by namespace:
 
 | Namespace | Tool | Description |
 |-----------|------|-------------|
@@ -123,7 +123,7 @@ All settings can also be passed as CLI flags (see `--help`).
 
 ### Interactive Chat
 
-Start a conversation with Phoebe to investigate threats and create rules:
+Start a conversation with Sheila to investigate threats and create rules:
 
 ```bash
 uv run main.py chat

@@ -6,7 +6,7 @@ Covers:
   Prompt 4  : Sara-in-a-Box UI pages, SaraBox API (org / skill / classify / submit)
   Prompt 6  : Sara base agent template modes and model-config swapping
   Osprey UI : Policy rule CRUD, monitor evaluate, HITL override
-  Phoebe    : Attack generator wallet and stub-generation path
+  Sheila    : Attack generator wallet and stub-generation path
 
 Run:  pytest tests/test_ui_integration.py -v
 """
@@ -296,7 +296,7 @@ class TestModeGates:
 
 
 class TestSaraBoxUIPages:
-    """Tests UIPortal /sarabox/* and /phoebe/* pages (Prompt 4 SaraBox)."""
+    """Tests UIPortal /sarabox/* and /sheila/* pages (Prompt 4 SaraBox)."""
 
     def setup_method(self):
         self.client = _make_ui_client()
@@ -306,13 +306,13 @@ class TestSaraBoxUIPages:
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
 
-    def test_phoebe_page_returns_html(self):
-        r = self.client.get("/phoebe")
+    def test_sheila_page_returns_html(self):
+        r = self.client.get("/sheila")
         assert r.status_code == 200
         assert "text/html" in r.headers["content-type"]
 
-    def test_phoebe_wallet_returns_address(self):
-        r = self.client.get("/phoebe/wallet")
+    def test_sheila_wallet_returns_address(self):
+        r = self.client.get("/sheila/wallet")
         assert r.status_code == 200
         assert r.json()["wallet"].startswith("0x")
 

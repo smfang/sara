@@ -122,7 +122,7 @@ class OpenClawAgent:
 
     Usage:
         agent = OpenClawAgent.from_config(
-            config=PHOEBE_CONFIG,
+            config=SHEILA_CONFIG,
             redis_url="redis://localhost:6379",
             mcp_dispatcher=openclaw.mcp.call,
             sandbox_runner=openclaw.sandbox.run,
@@ -244,7 +244,7 @@ class AgentRegistry:
 
     Usage:
         registry = AgentRegistry(redis_url="redis://localhost:6379")
-        phoebe = registry.get("phoebe", mcp_dispatcher=openclaw.mcp.call)
+        sheila = registry.get("sheila", mcp_dispatcher=openclaw.mcp.call)
         sara   = registry.get("sara_base")
     """
 
@@ -262,8 +262,8 @@ class AgentRegistry:
 
     def _load_builtin_configs(self) -> None:
         try:
-            from agents.phoebe.config import PHOEBE_CONFIG
-            self.register_config(PHOEBE_CONFIG)
+            from agents.sheila.config import SHEILA_CONFIG
+            self.register_config(SHEILA_CONFIG)
         except ImportError:
             pass
         try:
@@ -310,7 +310,7 @@ class AgentRegistry:
 async def register_all(
     openclaw_instance: Any,
     redis_url: str | None = None,
-    phoebe_channel_map: dict[str, str] | None = None,
+    sheila_channel_map: dict[str, str] | None = None,
 ) -> dict[str, OpenClawAgent]:
     """
     Wire all known Sara-framework agents into a running OpenClaw instance.
@@ -326,7 +326,7 @@ async def register_all(
         agents = await register_all(
             openclaw_instance=oc,
             redis_url=os.getenv("REDIS_URL"),
-            phoebe_channel_map={
+            sheila_channel_map={
                 "1234567890": "judge",    # #bounty-eval channel → judge mode
                 "0987654321": "redteam",  # #red-team channel   → redteam mode
                 "1122334455": "admin",    # #admin channel      → admin mode
@@ -335,7 +335,7 @@ async def register_all(
 
         @oc.on_message
         async def handle(event):
-            agent = agents.get("phoebe") or agents.get("sara")
+            agent = agents.get("sheila") or agents.get("sara")
             if agent:
                 reply = await agent.on_message(
                     user_id=str(event.author.id),
@@ -356,7 +356,7 @@ async def register_all(
     registered: dict[str, OpenClawAgent] = {}
 
     for name in list(AgentRegistry._configs.keys()):
-        cmap = phoebe_channel_map if name == "phoebe" else None
+        cmap = sheila_channel_map if name == "sheila" else None
         try:
             registered[name] = registry.get(
                 name=name,

@@ -3,7 +3,7 @@ Generalized Agent runtime.
 
 This module replaces the original agent.py with a fully config-driven,
 provider-agnostic, session-aware implementation. The Agent class knows
-nothing about Phoebe, Sara, or any specific persona — all of that lives
+nothing about Sheila, Sara, or any specific persona — all of that lives
 in AgentConfig objects defined in agents/<name>/config.py.
 
 Supported providers (all via the same two client classes):
@@ -247,7 +247,7 @@ class Agent:
     Provider-agnostic, config-driven, session-aware agent runtime.
 
     Usage:
-        config = load_agent_config("phoebe")   # or any agents/<name>/config.py
+        config = load_agent_config("sheila")   # or any agents/<name>/config.py
         store  = RedisSessionStore(url=REDIS_URL)
         agent  = Agent(config=config, session_store=store)
 

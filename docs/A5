@@ -1,0 +1,113 @@
+## Task: Collaborative Red Teaming MVP — runnable demo slice (in-process, no crypto/TEE)
+
+**Goal.** Build the smallest *working code* slice of CRT that demonstrates the differentiator —
+**coverage is shared, attribution is private** — end to end, from a CLI, with no ClickHouse, MPC,
+TEE, ZK, or real federation. This is the technical companion to `crt_showcase_demo.html`. It must
+slot under the SAME interfaces as the full A.5 build so the heavy crypto can be added later without
+re-architecture.
+
+### BEFORE WRITING ANY CODE
+1. Run: `find src/ agents/ -name "*.py" | head -50`
+2. Check if `src/crt/` exists and list its contents
+3. Check if `src/sarabox/taxonomy.py` exists (DAO_TAXONOMY, 6 leaves) — reuse it, do not redefine
+4. Report what you find BEFORE proceeding. Do not duplicate existing modules.
+
+### Scope — BUILD (MVP)
+Create under `src/crt/`:
+```
+src/crt/
+  __init__.py
+  models.py          # OrgProfile, CRTCampaign, OrgSubmission, CoverageMap, CRTReport
+  coordinator.py     # CRTCoordinator: lifecycle + leaf assignment + confirm via mock eval
+  aggregator.py      # CoverageAggregator: attribution-blind coverage + diversity
+  store.py           # InMemoryCRTStore (dict-backed; same method surface as a future ClickHouse store)
+  mock_eval.py       # MockEvaluator: stand-in for Sheila/Arena evaluation
+  report.py          # build_report + deterministic SHA3-256 report_hash
+  cli.py             # `python -m crt.cli demo` reproduces the showcase narrative
+  test_crt_mvp.py
+```
+
+### Scope — STUB / SKIP (do NOT build in the MVP)
+- ZK proofs (`zk_proof_hex=""`), MPC secret sharing, TEE aggregator, DP-SGD, Byzantine aggregation
+- Real gradient/FedAvg, ERC-8004 on-chain writes (log instead), ClickHouse persistence
+- Real Arena/Sheila calls — use `MockEvaluator`
+Add a one-line stub with `# A.5-full: <thing>` where each heavy component will later attach.
+
+### models.py
+- `OrgType` = dao_committee | academic | red_team | auditor | platform
+- `OrgProfile`: org_id, org_type, display_name, specialisation_tags: list[str], credit_balance: float=0
+- `CRTCampaign`: campaign_id, target_id, target_taxonomy_tags: list[str], enrolled_org_ids: list[str],
+  min_orgs:int=3, status: "recruiting"|"active"|"completed", started_at, completed_at
+- `OrgSubmission`: submission_id, campaign_id, org_id, taxonomy_tag_claimed, confirmed_coverage:bool=False,
+  score:float=0, credits_earned:float=0
+- `CoverageMap`: campaign_id, leaf_coverage: dict[str,bool], leaf_scores: dict[str,float],
+  total_leaves:int, covered_leaves:int, coverage_fraction:float, participating_orgs_count:int
+  **— NO org_id / no attribution field. This is the privacy invariant, enforced at the type level.**
+- `CRTReport`: campaign_id, target_id, total_leaves, covered_leaves, coverage_fraction,
+  participating_orgs_count, leaf_coverage, leaf_scores, min_threshold:float=0.8, min_threshold_met:bool,
+  zk_proof_hex:str="", report_hash:str=""
+
+### coordinator.py — CRTCoordinator(store, aggregator, evaluator)
+- `create_campaign(target_id, taxonomy_tags, min_orgs=3) -> CRTCampaign` (status="recruiting")
+- `enrol_org(campaign_id, org) -> dict`: assign leaves by specialisation (non-overlapping first);
+  activate campaign when `len(enrolled) >= min_orgs` (status -> "active", set started_at)
+- `submit_finding(campaign_id, org_id, taxonomy_tag) -> OrgSubmission`: requires status=="active"
+  and org enrolled; creates submission, then calls `confirm_coverage`
+- `confirm_coverage(submission) -> bool`: calls `evaluator.evaluate(...)`; if attack_success and
+  category matches the claimed tag → mark confirmed, record coverage (attribution-blind), award credits
+- `_award_credits(org, score, first_cover) -> float`: `score*10 + (5 if first_cover else 0)`
+- `finalise_campaign(campaign_id) -> CoverageMap`: status="completed"; log a mock ERC-8004 attestation
+  line (`# A.5-full: real on-chain write here`); return the coverage map
+
+### aggregator.py — CoverageAggregator(store)
+- `record_coverage(campaign_id, tag, score)` — **signature takes NO org_id** (enforce by design)
+- `get_coverage_map(campaign_id) -> CoverageMap`
+- `diversity_score(campaign_id) -> float` = distinct contributing org_types / 4
+- Attribution (`{tag: org_id}`) lives ONLY in the private store table, never in CoverageMap
+
+### mock_eval.py — MockEvaluator
+- `evaluate(prompt_or_tag, claimed_tag) -> dict`: returns
+  `{attack_success: True, coverage_category: claimed_tag, total_score: <deterministic 0.62–0.95>}`
+- Deterministic from a hash of (claimed_tag, org_id) so demo runs are reproducible
+- `# A.5-full: replace with AttestingAgent(Sheila judge) call`
+
+### report.py
+- `build_report(campaign, coverage_map, min_threshold=0.8) -> CRTReport`
+- `report_hash` = SHA3-256 of canonical JSON (sorted keys, no whitespace) of the public fields only
+  (never includes attribution) — sized as the future ZK-circuit input
+
+### cli.py — `python -m crt.cli demo`
+Reproduce the showcase narrative in the terminal:
+1. create campaign over the 6 DAO leaves (min_orgs=3)
+2. enrol 3 orgs of different types (dao_committee, academic, red_team) with specialisations
+3. each submits findings on assigned leaves; print coverage filling in
+4. print coverage_fraction, diversity_score, per-org credits
+5. finalise; print the CRTReport JSON + report_hash
+6. **print the public coverage map and assert no org identity is present**
+
+### HARD PRIVACY INVARIANT (verify in tests)
+- `CoverageMap` has no field containing org identity (`assert 'org_id' not in CoverageMap.model_fields`)
+- `aggregator.record_coverage` signature has no org parameter
+- the JSON returned by the public coverage path contains no org_id
+  (`assert 'org_id' not in json.dumps(coverage_map.model_dump())`)
+
+### Tests (src/crt/test_crt_mvp.py)
+- campaign stays "recruiting" with 2 orgs, flips to "active" on the 3rd
+- leaf assignment respects specialisation; no leaf assigned twice when avoidable
+- confirm_coverage records coverage + awards credits; first-cover bonus applied once
+- coverage_fraction correct (cover 4/6 → 0.667); diversity_score with 3 distinct types → 0.75
+- **privacy:** CoverageMap + public JSON contain no org_id (the money-shot test)
+- report_hash is deterministic and changes when coverage changes
+- CLI `demo` runs end-to-end without network/DB
+
+### Verify
+```bash
+python3 -m pytest src/crt/test_crt_mvp.py -v
+python3 -m crt.cli demo   # should print coverage filling to 100%, diversity 0.75, a report hash,
+                          # and a final line confirming no attribution in the public map
+```
+
+### Note
+Single process simulating N orgs; attribution privacy here is enforced by the data model (no org
+field), NOT by cryptography. Keep that disclaimer in any demo. The MPC/TEE/ZK guarantees attach in
+A.5-full behind these same interfaces.

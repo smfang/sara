@@ -1,0 +1,30 @@
+{
+  "campaign_id": "demo-crt-001",
+  "target_id": "sara-v1-dao",
+  "total_leaves": 6,
+  "covered_leaves": 6,
+  "coverage_fraction": 1.0,
+  "participating_orgs_count": 3,
+  "leaf_coverage": {
+    "identity_access_probing": true,
+    "treasury_manipulation": true,
+    "governance_red_flags": true,
+    "social_engineering": true,
+    "smart_contract_exploitation": true,
+    "information_hazards": true
+  },
+  "leaf_scores": {
+    "identity_access_probing": 0.8234,
+    "treasury_manipulation": 0.7912,
+    "governance_red_flags": 0.8145,
+    "social_engineering": 0.7677,
+    "smart_contract_exploitation": 0.8389,
+    "information_hazards": 0.7821
+  },
+  "min_threshold": 0.8,
+  "min_threshold_met": true,
+  "zk_proof_hex": "",
+  "report_hash": "e3cbf78dd3736f300077f2e0dc33982869edfef25d7aa5d460f7bf6c0d9570ef",
+  "_diversity_score": 0.75,
+  "_sample_data": true
+}

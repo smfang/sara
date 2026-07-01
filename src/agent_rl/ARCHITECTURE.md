@@ -8,7 +8,7 @@
 
 ## Overview
 
-Sara is a provider-agnostic, config-driven, multi-persona agent framework built on top of Anthropic Claude. Originally housing Phoebe (the Sandbox Arena judge/red-teamer), it has been generalized so that new agent personas can be created by adding a config file — no framework code changes required.
+Sara is a provider-agnostic, config-driven, multi-persona agent framework built on top of Anthropic Claude. Originally housing Sheila (the Sandbox Arena judge/red-teamer), it has been generalized so that new agent personas can be created by adding a config file — no framework code changes required.
 
 The framework has four layers:
 
@@ -37,8 +37,8 @@ sara/
 │       ├── layer3_retrieval.py ← In-context learning via experience retrieval
 │       └── layer4_finetune.py  ← DPO/OpenAI fine-tuning pipeline
 ├── agents/
-│   ├── phoebe/
-│   │   └── config.py         ← Phoebe persona (judge/admin/redteam modes)
+│   ├── sheila/
+│   │   └── config.py         ← Sheila persona (judge/admin/redteam modes)
 │   └── sara_base/
 │       └── config.py         ← Minimal template for new agents
 └── ARCHITECTURE.md           ← This file
@@ -50,7 +50,7 @@ sara/
 
 ### Design Principle: Separate Persona from Runtime
 
-The original agent had Phoebe's identity baked into the Agent class. The refactored design externalizes all persona-specific content into `AgentConfig` objects:
+The original agent had Sheila's identity baked into the Agent class. The refactored design externalizes all persona-specific content into `AgentConfig` objects:
 
 ```
 ┌─────────────────────────────────┐
@@ -135,7 +135,7 @@ Session IDs are arbitrary strings. Convention: `{agent_name}:{channel_id}:{user_
 OpenClaw (Discord/Telegram/Slack/WhatsApp)
 │
 ├── AgentRegistry
-│   ├── "phoebe" → OpenClawAgent(PHOEBE_CONFIG, redis, mcp)
+│   ├── "sheila" → OpenClawAgent(SHEILA_CONFIG, redis, mcp)
 │   └── "sara"   → OpenClawAgent(SARA_BASE_CONFIG, redis, mcp)
 │
 ├── MCP Skill Plugins
@@ -146,9 +146,9 @@ OpenClaw (Discord/Telegram/Slack/WhatsApp)
 │   └── index_new_examples()         (every hour)
 │
 └── Channel → Mode Mapping
-    ├── #bounty-eval  → phoebe/judge
-    ├── #red-team     → phoebe/redteam
-    └── #admin        → phoebe/admin
+    ├── #bounty-eval  → sheila/judge
+    ├── #red-team     → sheila/redteam
+    └── #admin        → sheila/admin
 ```
 
 ### Wiring (entrypoint)
@@ -159,7 +159,7 @@ from src.openclaw.adapter import register_all
 agents = await register_all(
     openclaw_instance=oc,
     redis_url=os.getenv("REDIS_URL"),
-    phoebe_channel_map={
+    sheila_channel_map={
         "CHANNEL_JUDGE_ID":   "judge",
         "CHANNEL_REDTEAM_ID": "redteam",
         "CHANNEL_ADMIN_ID":   "admin",
@@ -168,7 +168,7 @@ agents = await register_all(
 
 @oc.on_message
 async def handle(event):
-    agent = agents.get("phoebe")
+    agent = agents.get("sheila")
     reply = await agent.on_message(
         user_id=str(event.author.id),
         channel_id=str(event.channel.id),
@@ -294,7 +294,7 @@ from src.learning.layer2_reward import run_reward_labelling_job
 # In OpenClaw cron:
 @cron("0 * * * *")   # every hour
 async def label_rewards():
-    counts = await run_reward_labelling_job(store, agent_name="Phoebe")
+    counts = await run_reward_labelling_job(store, agent_name="Sheila")
     logger.info("Labelled rewards: %s", counts)
 ```
 
@@ -390,7 +390,7 @@ Inference (per turn):
 ```python
 # 1. Build preference pairs from ClickHouse
 builder = PreferencePairBuilder(store)
-pairs = await builder.build_pairs("Phoebe", "redteam", min_reward_gap=0.3)
+pairs = await builder.build_pairs("Sheila", "redteam", min_reward_gap=0.3)
 
 # 2. Export as HuggingFace dataset
 exporter = DPODatasetBuilder()
@@ -443,7 +443,7 @@ job_id = tuner.submit_job("train.jsonl", base_model="gpt-4o-mini", suffix="sara-
 - [ ] Human review queue for judge mode labels
 - [ ] OpenAI fine-tuning for judge mode on labelled pairs
 - [ ] Multi-modal attack generation (images, audio, structured data)
-- [ ] Cross-agent knowledge sharing (Sara learns from Phoebe's redteam history)
+- [ ] Cross-agent knowledge sharing (Sara learns from Sheila's redteam history)
 
 ---
 

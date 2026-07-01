@@ -45,6 +45,7 @@ from src.ozone.ozone import Ozone
 from src.ui.dashboard import TNS_DDL, TNSDashboard
 from src.ui.portal import UIPortal
 from src.osprey_ui.server import OspreyUIServer
+from src.crt.server import CRTServer
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class ArenaServer:
         safety_classifier: Any | None = None,
         ozone: Ozone | None = None,
         x402: X402Client | None = None,
+        agent: Any | None = None,
     ) -> None:
         self._scorer = scorer
         self._store = store
@@ -101,6 +103,9 @@ class ArenaServer:
         self._safety_classifier = safety_classifier
         self._ozone = ozone
         self._x402 = x402
+        # Frontier-model agent (Sheila) — powers Osprey UI NL drafting, AI feedback,
+        # and the adversarial probe for human rule authoring.
+        self._agent = agent
         # FIX 4b: initialize ERC8004 publisher if enabled
         from src.safety.tee_config import TEEConfig
         _tee_cfg = TEEConfig()
@@ -151,13 +156,24 @@ class ArenaServer:
             routes.extend(dashboard.routes())
 
         # Mount Osprey UI policy rules and monitor endpoints
+        from src.agent_rl.tinker_spike.evaluate import load_eval_report
+
         osprey_ui = OspreyUIServer(
             store=self._store,
             classifier=self._safety_classifier,
             ozone=self._ozone,
             erc8004=self._erc8004,
+            arena_store=self._store,
+            agent=self._agent,
+            # OS-05: surface the RL exit-gate's per-leaf F1 when the eval report
+            # exists; otherwise the server falls back to arena metrics.
+            rl_benchmark=load_eval_report,
         )
         routes.extend(osprey_ui.routes())
+
+        # Mount CRT read API (seeded with demo campaign at startup)
+        crt_server = CRTServer()
+        routes.extend(crt_server.routes())
 
         # Mount researcher portal, admin dashboard, Sara-in-a-Box, and test gates
         routes.extend(self._portal.routes())

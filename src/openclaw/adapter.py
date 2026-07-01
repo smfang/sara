@@ -133,7 +133,7 @@ class OpenClawAgent:
 
     Usage:
         agent = OpenClawAgent.from_config(
-            config=PHOEBE_CONFIG,
+            config=SHEILA_CONFIG,
             redis_url="redis://localhost:6379",
             mcp_dispatcher=openclaw.mcp.call,
             sandbox_runner=openclaw.sandbox.run,
@@ -251,12 +251,12 @@ class AgentRegistry:
     """
     Factory for named agents. Loads AgentConfig objects from agents/<name>/config.py.
 
-    Use this when you want to manage multiple agents (Phoebe, Sara, etc.) in
+    Use this when you want to manage multiple agents (Sheila, Sara, etc.) in
     a single OpenClaw deployment without hardcoding agent construction everywhere.
 
     Usage:
         registry = AgentRegistry(redis_url="redis://localhost:6379")
-        phoebe = registry.get("phoebe", mcp_dispatcher=openclaw.mcp.call)
+        sheila = registry.get("sheila", mcp_dispatcher=openclaw.mcp.call)
         sara   = registry.get("sara")
     """
 
@@ -274,8 +274,8 @@ class AgentRegistry:
 
     def _load_builtin_configs(self) -> None:
         try:
-            from agents.phoebe.config import PHOEBE_CONFIG
-            self.register_config(PHOEBE_CONFIG)
+            from agents.sheila.config import SHEILA_CONFIG
+            self.register_config(SHEILA_CONFIG)
         except ImportError:
             pass
         try:
@@ -339,7 +339,7 @@ async def register_all(
                            agent's lowercase name.  Example::
 
                                channel_maps={
-                                   "phoebe": {
+                                   "sheila": {
                                        "1234567890": "judge",
                                        "0987654321": "redteam",
                                        "1122334455": "admin",
@@ -357,7 +357,7 @@ async def register_all(
             openclaw_instance=oc,
             redis_url=os.getenv("REDIS_URL"),
             channel_maps={
-                "phoebe": {
+                "sheila": {
                     "1234567890": "judge",
                     "0987654321": "redteam",
                 },
@@ -366,7 +366,7 @@ async def register_all(
 
         @oc.on_message
         async def handle(event):
-            agent = agents.get("phoebe") or agents.get("sara")
+            agent = agents.get("sheila") or agents.get("sara")
             if agent:
                 reply = await agent.on_message(
                     user_id=str(event.author.id),

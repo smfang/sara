@@ -1,0 +1,75 @@
+## Task: Add human (user) safety-rule authoring to the Osprey Policy UI
+
+**Run after A.5-UI-R (it discovered the Policy UI stack).** Today, Osprey rules are written by **Sara**
+(the agent) via `saveRule`/`validateRules`. This adds a **human-facing rule-authoring experience** so an
+operator/rule-author can create, validate, preview, and deploy Osprey safety rules themselves — reusing
+the existing engine, not reimplementing it. Additive only.
+
+### Phase 0 — Discover (READ-ONLY; report before coding)
+```bash
+grep -rin "saveRule\|validateRules\|\.sml\|PolicyRule\|RuleSet" src/ --include=*.py --include=*.ts --include=*.tsx | head -40
+```
+Determine and **report**:
+1. Does the Policy UI already expose a human **create/edit rule** form, or is it view/manage-only?
+   (If full authoring already exists, stop and report that — no work needed.)
+2. The exact save/validate path the UI/agent uses (`osprey.saveRule`, `validateRules`), the rule file
+   format (raw `.sml` vs a `PolicyRule` model), and the API the UI calls.
+3. Whether Sara's NL→config helper exists (`src/sarabox/skill_builder.py` / judge mode) to reuse for drafting.
+
+### Phase 1 — Build the Rule Authoring screen (additive, reuse existing components)
+Add a "New / Edit Rule" experience under the Policy UI's Rules section with **two authoring modes**:
+
+- **(a) Assisted (natural language) — default for non-experts.** User types plain-English intent
+  ("flag any prompt asking for the treasury multisig private key as STOP"). Call Sara's
+  `SkillBuilder`/judge mode to **draft** a valid Osprey `.sml` rule. Show the draft in the editor for
+  the user to review/edit. *The model drafts; the human approves.*
+- **(b) Raw SML editor — for power users.** Direct `.sml` editing with syntax help.
+
+Both modes share the same controls:
+- **Validate** → call the **existing** `validateRules()`; show errors inline; **block save/deploy on invalid**.
+- **Preview** → run the rule against a user-supplied sample prompt (existing preview path); show the
+  would-be action (LOG / ALERT / STOP) before anything is saved.
+- **⭐ Get AI feedback (frontier model)** → send the rule the user **entered in the box** to a frontier
+  model (the configured `MODEL_API` — Claude/Kimi/etc., the same one Sara uses) for a qualitative review.
+  The feedback panel returns, in plain language:
+  - **Coverage:** what this rule will catch vs. likely miss, given its `Includes`/`Excludes`.
+  - **Over/under-breadth:** false-positive risk (will it flag benign content?) and gaps.
+  - **Ambiguity:** vague terms an attacker could exploit; concrete `Includes`/`Excludes` suggestions.
+  - **Adversarial probe (optional):** run **Sheila** (red-team mode) to generate 3–5 evasion attempts
+    against the rule and report which slip through — so the author sees the rule under attack, not just on a happy-path sample.
+  - **Suggested rewrite:** an improved `.sml` draft the user can accept into the editor (human approves).
+  This is *advisory* — it never auto-saves; Validate (deterministic) + human approval still gate deploy.
+  Stream the response; cache the rule text so repeated feedback on an unchanged rule is cheap.
+- **Save / Deploy** → call the **existing** `osprey.saveRule(file_path, content)`; record **author +
+  timestamp + version** (same audit trail as agent-written rules). A human-authored rule must pass
+  through the **identical validate + store path** as Sara's rules — no side door.
+- **CRT tie-in (optional):** let the author tag the rule with the DAO leaf it defends (`DAO_TAXONOMY`
+  id) so it appears in the rule↔leaf coverage cross-link (A.5-UI-R).
+
+### Guardrails (important — a bad rule can break moderation)
+- **Role-gate deploy:** non-privileged users can draft + validate; only an authorized role deploys.
+- **No invalid deploys:** validation must pass before Save is enabled.
+- **Safe ramp:** default a newly human-authored rule to **shadow/dry-run** (log, don't enforce) for a
+  short window before it goes live, mirroring the classifier's shadow mode.
+- **Audit:** every create/edit/deploy logged with author + timestamp + diff.
+
+### Tests
+- An invalid `.sml` rule cannot be saved/deployed (Save disabled; validate errors shown).
+- Assisted mode: an NL intent produces a draft that **passes `validateRules()`**.
+- Preview shows the correct action (LOG/ALERT/STOP) for a sample without persisting.
+- **AI feedback:** entering a rule returns structured feedback (coverage / breadth / ambiguity /
+  suggested rewrite) from the configured frontier model (mock the model call in tests); feedback is
+  advisory and **never auto-saves**; the Sheila probe path returns evasion results when enabled.
+- Save persists via the existing `saveRule` path with author + timestamp + version recorded.
+- Role-gate: a non-privileged user can draft but not deploy.
+
+### Constraints
+- **Additive only**; reuse the Policy UI's existing editor/table/components and the Osprey engine.
+- **Do not** create a second validation or rule-storage path — human and agent rules share one pipeline.
+- Reuse `DAO_TAXONOMY` ids for any leaf tagging; no hardcoded second list.
+
+### Verify
+```bash
+# run the Policy UI dev server; create a rule both ways (assisted + raw), validate, preview, deploy
+# run UI tests + any added route tests
+```

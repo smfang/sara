@@ -71,8 +71,15 @@ class SafetyClassifier:
         Classify whether the model output is unsafe for the given category.
 
         Returns:
-            {"unsafe": bool, "severity": int, "explanation": str}
+            {"unsafe": bool, "severity": 0, "explanation": str}
         """
+        if not self._api_key:
+            logger.warning(
+                "SafetyClassifier: no API key configured — returning stub result. "
+                "Set MODEL_API_KEY (or MOONSHOT_API_KEY / ANTHROPIC_API_KEY) to enable real classification."
+            )
+            return {"unsafe": False, "severity": 0, "explanation": "No API key — classification skipped (dev mode)"}
+
         # Resolve the category to a GA Guard policy and include its rules
         policy_section = ""
         resolved = classify_category(category)

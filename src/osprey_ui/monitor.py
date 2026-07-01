@@ -77,9 +77,7 @@ class SaraPolicyMonitor:
         prompt_hash = hashlib.sha3_256(prompt.encode()).hexdigest()
 
         # Step 1: Base classification
-        classification = await self._base_classifier.classify(prompt)
-        base_confidence = getattr(classification, "confidence", 0.0)
-        base_category = getattr(classification, "matched_category", None)
+        base_confidence, base_category = await self._classify(prompt)
 
         # Step 2 & 3: Evaluate against active rules
         matched_rule: PolicyRule | None = None
@@ -145,12 +143,40 @@ class SaraPolicyMonitor:
 
         return event
 
+    async def _classify(self, prompt: str) -> tuple[float, str | None]:
+        """Run the base classifier and normalize its result to (confidence, category).
+
+        Tolerates both the real SafetyClassifier — which takes
+        (prompt, model_output, category) and returns a dict {unsafe, severity, …} —
+        and a simpler object/mock exposing .confidence / .matched_category.
+        """
+        try:
+            try:
+                classification = await self._base_classifier.classify(
+                    prompt, model_output="[direct]", category="general"
+                )
+            except TypeError:
+                # Object/mock classifier that only accepts the prompt.
+                classification = await self._base_classifier.classify(prompt)
+        except Exception:
+            logger.warning("Base classifier failed; continuing with keyword matching", exc_info=True)
+            return 0.0, None
+
+        if isinstance(classification, dict):
+            unsafe = bool(classification.get("unsafe", False))
+            severity = int(classification.get("severity", 0) or 0)
+            confidence = min(0.99, 0.5 + 0.125 * severity) if unsafe else 0.0
+            category = classification.get("policy_category") or None
+            return confidence, category
+        return (
+            float(getattr(classification, "confidence", 0.0) or 0.0),
+            getattr(classification, "matched_category", None),
+        )
+
     async def test_rule(self, prompt: str, rule: PolicyRule) -> RuleTestResult:
         """Test a single prompt against a specific rule."""
         t0 = time.monotonic()
-        classification = await self._base_classifier.classify(prompt)
-        base_confidence = getattr(classification, "confidence", 0.0)
-        base_category = getattr(classification, "matched_category", None)
+        base_confidence, base_category = await self._classify(prompt)
 
         matched, confidence = _rule_matches(prompt, rule, base_category, base_confidence)
 

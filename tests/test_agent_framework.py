@@ -72,7 +72,7 @@ def test_agent_config_available_modes():
 def test_session_serialization_roundtrip():
     s = Session(
         session_id="sess-42",
-        agent_name="Phoebe",
+        agent_name="Sheila",
         mode="judge",
         messages=[{"role": "user", "content": "hello"}],
         metadata={"foo": "bar"},
@@ -384,7 +384,7 @@ async def test_agent_chat_tool_call_loop():
 def test_build_system_prompt_shim_judge():
     from src.agent.prompt import build_system_prompt
     p = build_system_prompt("judge")
-    assert "Phoebe" in p
+    assert "Sheila" in p
 
 
 def test_build_system_prompt_shim_admin():
@@ -399,17 +399,17 @@ def test_build_system_prompt_shim_redteam():
     assert "red team" in p.lower()
 
 
-# ── Phoebe config ─────────────────────────────────────────────────────────────
+# ── Sheila config ─────────────────────────────────────────────────────────────
 
-def test_phoebe_config_modes():
-    from agents.phoebe.config import PHOEBE_CONFIG
-    assert PHOEBE_CONFIG.name == "Phoebe"
-    assert set(PHOEBE_CONFIG.available_modes()) == {"judge", "admin", "redteam"}
+def test_sheila_config_modes():
+    from agents.sheila.config import SHEILA_CONFIG
+    assert SHEILA_CONFIG.name == "Sheila"
+    assert set(SHEILA_CONFIG.available_modes()) == {"judge", "admin", "redteam"}
 
 
-def test_phoebe_config_default_mode():
-    from agents.phoebe.config import PHOEBE_CONFIG
-    assert PHOEBE_CONFIG.default_mode == "judge"
+def test_sheila_config_default_mode():
+    from agents.sheila.config import SHEILA_CONFIG
+    assert SHEILA_CONFIG.default_mode == "judge"
 
 
 # ── Sara base config ──────────────────────────────────────────────────────────

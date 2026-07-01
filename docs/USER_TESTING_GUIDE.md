@@ -12,7 +12,7 @@ Sara-in-a-Box safety classifier. Covers the web UI and the CLI.
 3. [Web UI — Researcher Portal](#3-web-ui--researcher-portal)
 4. [Web UI — Admin Dashboard](#4-web-ui--admin-dashboard)
 5. [Web UI — Sara-in-a-Box](#5-web-ui--sara-in-a-box)
-6. [Web UI — Phoebe Attack Generator](#6-web-ui--phoebe-attack-generator)
+6. [Web UI — Sheila Attack Generator](#6-web-ui--sheila-attack-generator)
 7. [Web UI — Osprey Policy Rules](#7-web-ui--osprey-policy-rules)
 8. [Web UI — Test-mode Commitment Gates](#8-web-ui--test-mode-commitment-gates)
 9. [CLI — `chat` (interactive Sara)](#9-cli--chat)
@@ -91,7 +91,7 @@ Available pages once running:
 | `/researcher` | Submit attack prompts, view bounties, see leaderboard |
 | `/admin` | Manage bounties, review submissions, monitor queue |
 | `/sarabox` | Sara-in-a-Box skill-file builder and classifier |
-| `/phoebe` | Automated attack generation via the Phoebe agent |
+| `/sheila` | Automated attack generation via the Sheila agent |
 | `/tns` | Trust & Safety breach log dashboard |
 
 ### Sara-in-a-Box API — port 8001
@@ -309,40 +309,40 @@ curl -s http://localhost:8001/sarabox/credits/$ORG_ID \
 
 ---
 
-## 6. Web UI — Phoebe Attack Generator
+## 6. Web UI — Sheila Attack Generator
 
-**URL:** `http://localhost:8080/phoebe`
+**URL:** `http://localhost:8080/sheila`
 
-Phoebe is Sara operating in `redteam` mode — she autonomously generates
+Sheila is Sara operating in `redteam` mode — she autonomously generates
 adversarial prompts against a target model.
 
 ### What to test
 
 #### 6.1 Wallet check
-- Open the Phoebe page. Phoebe's agent wallet address appears in the header.
+- Open the Sheila page. Sheila's agent wallet address appears in the header.
 - In dev mode this is a deterministic software address.
 
 #### 6.2 Generate attacks
 1. Enter a **Bounty ID** (from the researcher portal bounty table).
 2. Click **Generate Attacks**.
-3. Phoebe generates 5 adversarial prompts and queues a submission automatically.
+3. Sheila generates 5 adversarial prompts and queues a submission automatically.
 4. The response shows:
    - `prompts_generated` (expect 5)
-   - `commitment_hash` (Phoebe commits before submitting)
+   - `commitment_hash` (Sheila commits before submitting)
    - `submission_id`
    - `status: "queued"`
 
 #### 6.3 Poll the evaluation result
 ```bash
 SUBMISSION_ID="<from step 6.2>"
-curl -s http://localhost:8080/phoebe/result/$SUBMISSION_ID | python3 -m json.tool
+curl -s http://localhost:8080/sheila/result/$SUBMISSION_ID | python3 -m json.tool
 ```
 
 Poll every few seconds. Status transitions: `queued → evaluating → scored`.
 When scored, the response includes `total_score`, `payout_usdc`, and
 `attack_success` per prompt.
 
-> **Note:** If no real scorer is configured, Phoebe uses the mock evaluator
+> **Note:** If no real scorer is configured, Sheila uses the mock evaluator
 > which simulates a ~6-second evaluation with randomised scores.
 
 ---
@@ -663,7 +663,7 @@ print(h)
 
 **Step 5.** Submit via the Researcher Portal (paste bounty ID, prompts, commitment hash, wallet).
 
-**Step 6.** Wait ~10 seconds. Poll `/phoebe/result/<submission_id>` or refresh the
+**Step 6.** Wait ~10 seconds. Poll `/sheila/result/<submission_id>` or refresh the
 researcher portal. Confirm `total_score` and `payout_usdc` are populated.
 
 **Expected result:** `payout_usdc > 0` if at least one prompt was rated as a

@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 OSPREY_UI_DDL = [
     "CREATE DATABASE IF NOT EXISTS osprey_ui",
     """
+    CREATE TABLE IF NOT EXISTS osprey_ui.leaf_f1_cache (
+        category       String,
+        precision_val  Float32 DEFAULT 0,
+        recall_val     Float32 DEFAULT 0,
+        f1_score       Float32 DEFAULT 0,
+        sample_count   UInt32 DEFAULT 0,
+        updated_at     DateTime64(3) DEFAULT now()
+    ) ENGINE = ReplacingMergeTree(updated_at)
+      ORDER BY category
+    """,
+    """
     CREATE TABLE IF NOT EXISTS osprey_ui.policy_rules (
         rule_id        String,
         org_id         String,
@@ -148,14 +159,15 @@ class OspreyUIStore:
 
     async def list_monitor_events(
         self,
-        org_id: str,
+        org_id: str | None,
         action: str | None = None,
         rule_id: str | None = None,
         from_ts: str | None = None,
         to_ts: str | None = None,
         limit: int = 100,
     ) -> list[MonitorEvent]:
-        conditions = [f"org_id = '{_esc(org_id)}'"]
+        # org_id=None or "" means cross-org scan (used by F1 refresh)
+        conditions = [] if not org_id else [f"org_id = '{_esc(org_id)}'"]
         if action:
             conditions.append(f"action_taken = '{_esc(action)}'")
         if rule_id:
@@ -186,6 +198,55 @@ class OspreyUIStore:
         if not rows:
             return None
         return _row_to_monitor_event(rows[0])
+
+    # ------------------------------------------------------------------
+    # OS-05: Leaf F1 cache
+    # ------------------------------------------------------------------
+
+    async def get_leaf_f1_stats(self) -> list[dict]:
+        """Return cached per-category F1 scores for the Policy UI (OS-05)."""
+        sql = """
+            SELECT category, precision_val, recall_val, f1_score, sample_count, updated_at
+            FROM osprey_ui.leaf_f1_cache FINAL
+            ORDER BY f1_score ASC
+        """
+        try:
+            resp = await self._ch.query(sql)
+            return [
+                {
+                    "category": str(row[0]),
+                    "precision": float(row[1]),
+                    "recall": float(row[2]),
+                    "f1": float(row[3]),
+                    "sample_count": int(row[4]),
+                    "updated_at": str(row[5]),
+                }
+                for row in resp.result_rows  # type: ignore
+            ]
+        except Exception:
+            return []
+
+    async def upsert_leaf_f1(
+        self,
+        category: str,
+        precision_val: float,
+        recall_val: float,
+        f1_score: float,
+        sample_count: int,
+    ) -> None:
+        """Write or update F1 stats for one taxonomy leaf."""
+        import time
+        sql = f"""
+            INSERT INTO osprey_ui.leaf_f1_cache VALUES (
+                '{_esc(category)}',
+                {precision_val},
+                {recall_val},
+                {f1_score},
+                {sample_count},
+                {int(time.time() * 1000)}
+            )
+        """
+        await self._ch.query(sql)
 
 
 # ---------------------------------------------------------------------------
@@ -221,7 +282,10 @@ def _row_to_policy_rule(row: tuple) -> PolicyRule:
 
 def _row_to_monitor_event(row: tuple) -> MonitorEvent:
     from datetime import datetime
-    ts = datetime.utcfromtimestamp(int(row[8]) / 1000) if len(row) > 8 and row[8] else datetime.utcnow()
+    # DDL column order (9 cols, indices 0-8):
+    # event_id(0) org_id(1) session_id(2) prompt_hash(3) matched_rule_id(4)
+    # action_taken(5) confidence(6) timestamp(7) erc8004_tx_hash(8)
+    ts = datetime.utcfromtimestamp(int(row[7]) / 1000) if len(row) > 7 and row[7] else datetime.utcnow()
     return MonitorEvent(
         event_id=str(row[0]),
         org_id=str(row[1]),
@@ -231,5 +295,5 @@ def _row_to_monitor_event(row: tuple) -> MonitorEvent:
         action_taken=str(row[5]),
         confidence=float(row[6]),
         timestamp=ts,
-        erc8004_tx_hash=str(row[9]) if len(row) > 9 else "",
+        erc8004_tx_hash=str(row[8]) if len(row) > 8 else "",
     )

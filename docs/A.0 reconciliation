@@ -1,0 +1,69 @@
+Task: Reconcile prompt assumptions against the real smfang/sara repo, then green-light the CRT spike
+Why. The Sara/Sheila prompt suite (A.1 rename, A.2-lite repro, A.3 RL, A.5 CRT) assumes modules (src/arena, src/sarabox, DAO_TAXONOMY, src/crypto, agents/phoebe|sheila, ERC-8004, x402, α/β/γ/δ scorer) that may not exist in this repo. The public README describes a single T&S agent (Osprey .sml rules + ClickHouse + Deno/TypeScript code-mode, Python/uv runtime) with the agent named "Sara"/"Phoebe" and no Sheila. Before building the collaborative-red-teaming (CRT) spike, audit reality and map every assumption to it. Phase 0 is READ-ONLY.
+
+
+Phase 0 — Read-only audit (DO NOT modify any code)
+Report findings only; write nothing except the reconciliation doc in Phase 2.
+
+Context
+
+git remote -v && git branch --show-current && git log --oneline -8
+ls -la && cat README.md | head -60
+find . -name "*.py" | head -60 ; find . -name "*.ts" | head -40
+
+Search for each assumed subsystem (record present/absent + path evidence):
+
+for p in src/arena src/sarabox src/rl_training src/crypto src/crt agents/phoebe agents/sheila; do
+  echo "== $p =="; ls -la "$p" 2>/dev/null || echo "ABSENT"; done
+grep -rin "DAO_TAXONOMY\|ERC8004\|x402\|SafetyClassifier\|ScoringConfig\|alpha.*beta.*gamma" src/ 2>/dev/null | head -30
+grep -rin "canonical\|ReproducibilityBundle\|run_id" src/ 2>/dev/null | head -20
+
+Agent identity reality — where are the names actually set?
+
+grep -rin "phoebe\|sheila\|\bsara\b" --include=*.py --include=*.md --include=*.ts --include=*.env* . | head -40
+
+Note whether identity lives in a system prompt / config string / CLI (likely) vs. an agents/phoebe/ package (the A.1 prompt assumes the latter).
+
+Osprey + ClickHouse substrate (what genuinely exists to build on):
+
+grep -rin "osprey\|\.sml\|saveRule\|validateRules" . | head -20
+grep -rin "clickhouse\|create table\|sara_interactions\|interactions" . | head -20
+
+Python env / test setup: is there pyproject.toml / uv.lock? pytest configured? Deno usage?
+
+
+Phase 1 — Classify each assumption
+Build a table with one row per assumption: assumption | status (PRESENT/PARTIAL/ABSENT) | evidence path | gap | impact on CRT spike. Cover at minimum: two-agent split, agents/sheila, src/arena patterns, src/sarabox + DAO_TAXONOMY, src/crypto/canonical.py, ERC-8004, x402, scorer, ClickHouse interactions table, Osprey rule I/O.
+
+Be blunt: if absent, write "ABSENT — greenfield," do not imply it exists. Distinguish what's on the current branch vs. public main (you reported the branch in Phase 0).
+
+
+Phase 2 — Output docs/reconciliation.md + the CRT spike go-plan
+Write ONE file, docs/reconciliation.md, containing:
+
+(a) The assumption→reality table from Phase 1.
+
+(b) Corrected status of PRD "implemented" claims — flag any that are not actually in this repo (e.g., if there is no Arena economy / sarabox / RL code, say so).
+
+(c) CRT spike readiness decision. The CRT MVP (A.5-MVP) must run as a standalone package that does NOT depend on arena/sarabox/crypto, given they are likely absent. Specify:
+
+Create src/crt/ with: models.py, coordinator.py, aggregator.py, store.py (in-memory), mock_eval.py, report.py, cli.py, test_crt_mvp.py.
+Taxonomy source of truth: if src/sarabox/taxonomy.py::DAO_TAXONOMY exists, import it; else define the 6 DAO leaves locally in src/crt/dao_leaves.py AND make them match the leaves used by the DAO fine-tuning seed set (dao_gold_seed.jsonl) so both tracks share identical leaf ids: identity_access_probing, treasury_manipulation, governance_red_flags, social_engineering, smart_contract_exploitation, information_hazards.
+Canonical encoder: if src/crypto/canonical.py exists (from A.2-lite), reuse it for CRTReport.report_hash; else ship a minimal local _canonical_json() in report.py marked # TODO consolidate into src/crypto/canonical.py when A.2-lite lands (avoid a permanent 2nd serializer).
+Name-agnostic: the MVP mocks evaluation, so it must NOT depend on the A.1 rename or any agents/sheila package — use "Sheila" only as a display string. Do not block the spike on A.1.
+Integration seams, documented not built: note where CRT would later touch the real substrate (Osprey .sml for org rules, ClickHouse for persistence, AttestingAgent for real eval) as # A.5-full: TODOs — the spike stays in-memory + mock.
+
+(d) Go/No-Go line for the CRT spike, plus the exact ordered steps to run it.
+
+
+Constraints
+Phase 0 + 1 are strictly read-only. The ONLY file you may write is docs/reconciliation.md.
+Do not refactor the existing agent, rename anything, or add dependencies in this task.
+If the repo turns out to already contain arena/sarabox/crt code (private branch), report that and adjust the go-plan to reuse rather than greenfield.
+Verify
+cat docs/reconciliation.md   # table present, statuses evidenced, CRT go-plan + go/no-go line included
+git status                   # ONLY docs/reconciliation.md added; no other changes
+After this runs
+If GO: proceed to A.5-MVP_collaborative_red_teaming_demo.md as a standalone spike (in parallel with the DAO fine-tuning seeding already underway). Keep the 6 leaf ids identical across both tracks so the CRT coverage map and the fine-tuning taxonomy never diverge.
+
+

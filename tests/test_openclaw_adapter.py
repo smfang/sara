@@ -29,8 +29,8 @@ def reset_agent_registry():
     # Re-load the built-in configs so registry tests start from a known state
     AgentRegistry._configs.clear()
     try:
-        from agents.phoebe.config import PHOEBE_CONFIG
-        AgentRegistry.register_config(PHOEBE_CONFIG)
+        from agents.sheila.config import SHEILA_CONFIG
+        AgentRegistry.register_config(SHEILA_CONFIG)
     except ImportError:
         pass
     try:
@@ -268,15 +268,15 @@ async def test_on_message_explicit_session_id_overrides():
 
 # ── AgentRegistry ─────────────────────────────────────────────────────────────
 
-def test_registry_loads_phoebe_and_sara():
+def test_registry_loads_sheila_and_sara():
     # fixture reloads builtins — just assert they're present
-    assert "phoebe" in AgentRegistry._configs
+    assert "sheila" in AgentRegistry._configs
     assert "sara" in AgentRegistry._configs
 
 
 def test_registry_get_returns_openclaw_agent():
     registry = AgentRegistry()
-    agent = registry.get("phoebe")
+    agent = registry.get("sheila")
     assert isinstance(agent, OpenClawAgent)
 
 
@@ -288,8 +288,8 @@ def test_registry_get_unknown_raises_key_error():
 
 def test_registry_get_same_name_returns_same_instance():
     registry = AgentRegistry()
-    a1 = registry.get("phoebe")
-    a2 = registry.get("phoebe")
+    a1 = registry.get("sheila")
+    a2 = registry.get("sheila")
     assert a1 is a2
 
 
@@ -311,7 +311,7 @@ async def test_register_all_returns_known_agents():
     fake_openclaw.mcp_call = None
 
     registered = await register_all(fake_openclaw, redis_url=None)
-    assert "phoebe" in registered
+    assert "sheila" in registered
     assert "sara" in registered
     assert all(isinstance(v, OpenClawAgent) for v in registered.values())
 
@@ -328,10 +328,10 @@ async def test_register_all_channel_maps_applied():
     registered = await register_all(
         fake_openclaw,
         redis_url=None,
-        channel_maps={"phoebe": {"chan-x": "admin"}},
+        channel_maps={"sheila": {"chan-x": "admin"}},
     )
-    phoebe_agent = registered["phoebe"]
-    assert phoebe_agent._channel_mode_map.get("chan-x") == "admin"
+    sheila_agent = registered["sheila"]
+    assert sheila_agent._channel_mode_map.get("chan-x") == "admin"
     # sara gets no channel map
     sara_agent = registered["sara"]
     assert sara_agent._channel_mode_map == {}

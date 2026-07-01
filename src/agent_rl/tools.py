@@ -7,12 +7,12 @@ deployment-specific tool code directly.
 
 Built-in executors:
   - NullToolExecutor      → no tools (text-only agents)
-  - CodeToolExecutor      → execute_code only (original Phoebe behaviour)
+  - CodeToolExecutor      → execute_code only (original Sheila behaviour)
   - CompositeToolExecutor → combine multiple executors
 
 Third-party executors live in their own modules:
-  - src/openclaw/tools.py  → OpenClaw MCP bridge
-  - agents/phoebe/tools.py → Sandbox Arena tools
+  - src/openclaw/tools.py   → OpenClaw MCP bridge
+  - agents/sheila/tools.py  → Sandbox Arena tools
 """
 
 from abc import ABC, abstractmethod

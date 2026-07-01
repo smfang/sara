@@ -34,6 +34,9 @@
   .bounty-name { font-weight:600; font-size:13px; margin-bottom:4px; }
   .bounty-meta { color:var(--text2); font-size:11px; display:flex; gap:10px; flex-wrap:wrap; margin-top:4px; }
   .tag { font-size:10px; padding:1px 6px; border-radius:4px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); }
+  .cat-chip { font-size:10px; padding:3px 8px; border-radius:12px; background:var(--surface2); color:var(--text2); border:1px solid var(--border); cursor:pointer; transition:all .15s; white-space:nowrap; }
+  .cat-chip:hover { border-color:var(--accent); color:var(--accent); }
+  .cat-chip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
   .usdc { color:var(--green); font-weight:600; }
   label { font-size:11px; color:var(--text2); display:block; margin-bottom:4px; }
   input, textarea, select { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:6px; color:var(--text); font-family:var(--font); font-size:13px; padding:8px 10px; outline:none; transition:border-color .15s; }
@@ -102,7 +105,7 @@
     <a href="/tns">T&amp;S</a>
     <a href="/admin">Admin</a>
     <a href="/sarabox">SaraBox</a>
-    <a href="/phoebe">Phoebe</a>
+    <a href="/sheila">Sheila</a>
     <span style="color:var(--border);margin:0 4px;">|</span>
     <a href="/monitor">Monitor</a>
     <a href="/sheila">Sheila</a>
@@ -115,7 +118,8 @@
 <div class="layout">
   <!-- Sidebar: bounty list -->
   <div class="sidebar">
-    <div class="panel-title">Active Bounties</div>
+    <div class="panel-title">Active Bounties <button class="btn btn-ghost btn-sm" onclick="loadBounties()" style="margin-left:8px;">↻</button></div>
+    <div id="category-filter" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;"></div>
     <div id="bounty-list"><div id="no-bounty-msg">Loading bounties…</div></div>
 
     <div class="panel" style="margin-top:16px;" id="bounty-detail" style="display:none">
@@ -225,6 +229,7 @@ let walletValid = false;
 let currentSubmissionId = null;
 let pollTimer = null;
 let fullTxHash = "";
+let activeCategoryFilter = null;
 const gateResults = {};
 const bounciesMap = {};
 
@@ -250,22 +255,62 @@ async function loadBounties() {
     const list = document.getElementById("bounty-list");
     if (!d.bounties || d.bounties.length === 0) {
       list.innerHTML = '<div id="no-bounty-msg">No active bounties.</div>';
+      document.getElementById("category-filter").innerHTML = "";
       return;
     }
     d.bounties.forEach(b => { bounciesMap[b.bounty_id] = b; });
-    list.innerHTML = d.bounties.map(b => `
-      <div class="bounty-card" id="bc-${esc(b.bounty_id)}" data-bounty-id="${esc(b.bounty_id)}" onclick="selectBountyById(this.dataset.bountyId)">
-        <div class="bounty-name">${esc(b.target_model_name || b.bounty_id)}</div>
-        <div class="bounty-meta">
-          <span class="usdc">≤ $${(b.remaining_usdc||0).toFixed(2)} USDC remaining</span>
-        </div>
-        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
-          ${(b.categories||[]).map(c=>`<span class="tag">${esc(c)}</span>`).join("")}
-        </div>
-      </div>`).join("");
+    _renderBountyCards(d.bounties);
+    _buildCategoryFilter(d.bounties);
   } catch(e) {
     document.getElementById("bounty-list").innerHTML = `<div style="color:var(--red);font-size:11px;">${e.message}</div>`;
   }
+}
+
+function _buildCategoryFilter(bounties) {
+  const allCats = [...new Set(bounties.flatMap(b => b.categories || []))].sort();
+  const el = document.getElementById("category-filter");
+  if (allCats.length === 0) { el.innerHTML = ""; return; }
+  const chips = [`<span class="cat-chip${activeCategoryFilter === null ? ' active' : ''}" data-cat="">All</span>`];
+  allCats.forEach(c => {
+    chips.push(`<span class="cat-chip${activeCategoryFilter === c ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</span>`);
+  });
+  el.innerHTML = chips.join("");
+  el.querySelectorAll(".cat-chip").forEach(chip => {
+    chip.addEventListener("click", () => setCategoryFilter(chip.dataset.cat || null));
+  });
+}
+
+function _renderBountyCards(bounties) {
+  const filtered = activeCategoryFilter
+    ? bounties.filter(b => (b.categories || []).includes(activeCategoryFilter))
+    : bounties;
+  const list = document.getElementById("bounty-list");
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="color:var(--text2);font-size:11px;">No bounties match this category.</div>`;
+    return;
+  }
+  list.innerHTML = filtered.map(b => `
+    <div class="bounty-card" id="bc-${esc(b.bounty_id)}" data-bounty-id="${esc(b.bounty_id)}" onclick="selectBountyById(this.dataset.bountyId)">
+      <div class="bounty-name">${esc(b.target_model_name || b.bounty_id)}</div>
+      <div class="bounty-meta">
+        <span class="usdc">≤ $${(b.remaining_usdc||0).toFixed(2)} USDC remaining</span>
+      </div>
+      <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">
+        ${(b.categories||[]).map(c=>`<span class="tag">${esc(c)}</span>`).join("")}
+      </div>
+    </div>`).join("");
+  // Re-apply selection highlight if selected bounty is still visible
+  if (selectedBounty) {
+    const el = document.getElementById("bc-" + selectedBounty.bounty_id);
+    if (el) el.classList.add("selected");
+  }
+}
+
+function setCategoryFilter(cat) {
+  activeCategoryFilter = cat;
+  const allBounties = Object.values(bounciesMap);
+  _buildCategoryFilter(allBounties);
+  _renderBountyCards(allBounties);
 }
 
 function selectBountyById(id) { selectBounty(bounciesMap[id]); }
@@ -368,7 +413,11 @@ async function submitForm() {
       body: JSON.stringify({ bounty_id: selectedBounty.bounty_id, prompts })
     });
     const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.status);
+    if (!r.ok) {
+      const msg = d.error || String(r.status);
+      const detail = d.description ? ` (${d.description})` : "";
+      throw new Error(`${r.status} ${msg}${detail}`);
+    }
     currentSubmissionId = d.submission_id;
     document.getElementById("submission-id-display").textContent = currentSubmissionId;
     document.getElementById("status-panel").style.display = "block";
@@ -401,7 +450,7 @@ async function pollStatus() {
       showReceipt(d);
     } else if (status === "rejected") {
       clearInterval(pollTimer);
-      document.getElementById("submit-error").textContent = "Submission rejected by server.";
+      document.getElementById("submit-error").textContent = "Submission rejected — evaluation error (check server logs). In dev mode, set MODEL_API_KEY to enable scoring.";
     }
   } catch(e) {}
 }

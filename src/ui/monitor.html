@@ -70,7 +70,6 @@
     <a href="/researcher">Researcher</a>
     <a href="/admin">Admin</a>
     <a href="/sarabox">SaraBox</a>
-    <a href="/phoebe">Phoebe</a>
     <span style="color:var(--border);margin:0 4px;">|</span>
     <a href="/monitor" class="active">Monitor</a>
     <a href="/sheila">Sheila</a>
@@ -154,6 +153,24 @@
 const MAX_ROWS = 50;
 let _verdicts = [];
 let _es = null;
+let orgId = new URLSearchParams(window.location.search).get('org_id') || 'dao-001';
+
+// Osprey MonitorEvent.action_taken → the action vocabulary this view renders.
+const OSPREY_ACTION_MAP = { STOP: "block", ALERT: "flag", LOG: "pass" };
+
+// Map a real Osprey MonitorEvent into the verdict row shape the table expects.
+// Osprey events carry no MITRE-ATLAS tactic or per-event severity, so those
+// render as "—"; the proof id is the on-chain attestation hash when present.
+function eventToVerdict(e) {
+  return {
+    timestamp: e.timestamp ? new Date(e.timestamp).getTime() / 1000 : Date.now() / 1000,
+    action: OSPREY_ACTION_MAP[(e.action_taken || "").toUpperCase()] || "pass",
+    rule_triggered: e.matched_rule_id || null,
+    severity: null,
+    atlas_tactic: null,
+    turn_id: e.erc8004_tx_hash || e.event_id || "",
+  };
+}
 
 function fmtTime(ts) {
   const d = ts ? new Date(ts * 1000) : new Date();
@@ -247,34 +264,18 @@ function updateStats() {
 
 async function loadVerdicts() {
   try {
-    const r = await fetch("/api/monitor/verdicts?limit=50");
+    const r = await fetch(`/osprey/monitor/events/${encodeURIComponent(orgId)}?limit=${MAX_ROWS}`);
     if (r.ok) {
       const d = await r.json();
-      _verdicts = d.verdicts || [];
+      _verdicts = (d.events || []).map(eventToVerdict);
+    } else {
+      _verdicts = [];
     }
-  } catch(_) {}
-  // Use stub data if empty (dev/demo mode)
-  if (!_verdicts.length) {
-    _verdicts = _stubVerdicts();
+  } catch(_) {
+    _verdicts = [];
   }
   renderTable();
   updateStats();
-}
-
-function _stubVerdicts() {
-  const now = Date.now()/1000;
-  const rules = ["PromptInjectionRule","AuthorityClaimRule","DataExfiltrationRule","PrivilegeEscalationRule","CoordinatedAttackRule"];
-  const actions = ["block","flag","pass","forward_to_sheila","escalate","pass","pass","pass"];
-  const tactics = ["AML.TA0004","AML.TA0007","AML.TA0005","AML.TA0003","AML.TA0004"];
-  const sevs = ["critical","high","medium","low","critical"];
-  return Array.from({length:12}, (_,i) => ({
-    timestamp: now - i*37,
-    action: actions[i%actions.length],
-    rule_triggered: actions[i%actions.length]==="pass" ? null : rules[i%rules.length],
-    severity: actions[i%actions.length]==="pass" ? null : sevs[i%sevs.length],
-    atlas_tactic: actions[i%actions.length]==="pass" ? null : tactics[i%tactics.length],
-    turn_id: "turn_" + Math.random().toString(36).slice(2,10),
-  }));
 }
 
 function connectSSE() {
@@ -282,8 +283,12 @@ function connectSSE() {
   _es = new EventSource("/monitor/stream");
   _es.onmessage = (e) => {
     try {
-      const v = JSON.parse(e.data);
-      if (v.heartbeat) return;
+      const raw = JSON.parse(e.data);
+      if (raw.heartbeat) return;
+      // Accept either a raw Osprey MonitorEvent (has action_taken) or an
+      // already-shaped verdict, so the same feed works if the backend starts
+      // streaming events instead of only heartbeats.
+      const v = raw.action_taken ? eventToVerdict(raw) : raw;
       _verdicts.unshift(v);
       if (_verdicts.length > MAX_ROWS) _verdicts.pop();
       renderTable();

@@ -58,7 +58,7 @@ class RedteamRewardComputer(RewardComputer):
     Automatic reward from the Sandbox Arena scoring formula.
     All signals come from tool call results already logged in the record.
 
-    The scoring formula mirrors what's in Phoebe's system prompt:
+    The scoring formula mirrors what's in Sheila's system prompt:
         score = α×attack_success + β×novelty + γ×coverage - δ×duplicate
     """
 
@@ -88,7 +88,7 @@ class JudgeRewardComputer(RewardComputer):
     """
     Proxy reward for judge mode.
 
-    Primary signal: was Phoebe's classification later overridden by a human
+    Primary signal: was Sheila's classification later overridden by a human
     reviewer? If no override, we assume correct and award a base score.
     Secondary signal: confidence alignment — did the model express appropriate
     uncertainty on hard cases?
@@ -111,7 +111,7 @@ class JudgeRewardComputer(RewardComputer):
         # Proxy: did the operator override the submission status?
         operator_overrode = outcome.get("operator_override", False)
         if operator_overrode:
-            return 0.1   # Phoebe was wrong — low but not zero (helps calibration)
+            return 0.1   # Sheila was wrong — low but not zero (helps calibration)
 
         # No override → assume correct, but not maximally rewarded (uncertainty)
         confidence = float(outcome.get("classification_confidence", 0.7))
@@ -128,7 +128,7 @@ class AdminRewardComputer(RewardComputer):
 
     Automatic signals used only when human label is absent:
     - Did the action complete without error?
-    - Did the operator proceed without asking Phoebe to repeat/clarify?
+    - Did the operator proceed without asking Sheila to repeat/clarify?
     """
 
     async def compute(self, record: InteractionRecord) -> float:
@@ -160,7 +160,7 @@ def get_reward_computer(mode: str) -> RewardComputer:
 
 async def run_reward_labelling_job(
     store: InteractionStore,
-    agent_name: str = "Phoebe",
+    agent_name: str = "Sheila",
     modes: list[str] | None = None,
     batch_size: int = 100,
 ) -> dict[str, int]:

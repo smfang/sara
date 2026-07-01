@@ -6,7 +6,7 @@ from typing import Literal, TypeVar
 import click
 from aiokafka.client import asyncio
 
-from agents.phoebe.config import PHOEBE_CONFIG
+from agents.sheila.config import SHEILA_CONFIG
 from src.agent.agent import Agent
 from src.agent.config import ModelConfig
 from src.agent.session import InMemorySessionStore
@@ -223,7 +223,7 @@ def build_arena_services(
     model_config = _resolve_model_config(model_api, model_name, model_api_key, model_endpoint)
 
     agent = Agent(
-        config=PHOEBE_CONFIG,
+        config=SHEILA_CONFIG,
         tool_executor=CodeToolExecutor(executor),
         session_store=InMemorySessionStore(),
         model_override=model_config,
@@ -307,6 +307,7 @@ def arena_cmd(
         facilitator_url=CONFIG.x402_facilitator_url,
         dev_mode=is_dev,
         safety_classifier=classifier,
+        agent=agent,
     )
 
     host = arena_host or CONFIG.arena_host
@@ -325,7 +326,7 @@ def arena_cmd(
                 pass
         logger.info("T&S breach log table initialized")
 
-        # Seed a demo bounty in dev mode so the Phoebe UI has something to work with
+        # Seed a demo bounty in dev mode so the Sheila UI has something to work with
         if is_dev:
             try:
                 existing = await store.list_active_bounties()

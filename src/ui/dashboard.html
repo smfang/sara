@@ -578,6 +578,86 @@
   .wizard-step.active {
     display: block;
   }
+
+  /* CRT tab */
+  .crt-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 16px;
+    padding: 16px 24px;
+    height: calc(100vh - 105px);
+  }
+
+  .crt-layout .panel { height: 100%; overflow: hidden; }
+
+  .crt-full-width { grid-column: 1 / -1; height: auto !important; }
+
+  .leaf-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .leaf-tile {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  .leaf-tile.covered { border-color: var(--green); }
+  .leaf-tile.uncovered { opacity: 0.6; }
+
+  .leaf-name {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 4px;
+  }
+
+  .leaf-score { font-size: 12px; color: var(--text); }
+
+  .metrics-strip {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background: var(--bg);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+
+  .metric { display: flex; flex-direction: column; gap: 2px; }
+
+  .metric-label {
+    font-size: 10px;
+    color: var(--text2);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .metric-value { font-size: 14px; font-weight: 700; color: var(--text); }
+
+  .report-hash {
+    font-size: 10px;
+    color: var(--text2);
+    word-break: break-all;
+    font-family: var(--font);
+    margin-top: 4px;
+  }
+
+  .zk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--surface2);
+    color: var(--text2);
+  }
 </style>
 </head>
 <body>
@@ -605,6 +685,7 @@
 <div class="tabs">
   <button class="tab active" onclick="switchTab('tab-classify')" id="tab-btn-classify">Classify</button>
   <button class="tab" onclick="switchTab('tab-policy')" id="tab-btn-policy">Policy Rules</button>
+  <button class="tab" onclick="switchTab('tab-crt')" id="tab-btn-crt">Collab Red Teaming</button>
 </div>
 
 <!-- TAB: Classify (original dashboard) -->
@@ -720,7 +801,11 @@
     <div class="panel">
       <div class="panel-header">Rule Creator</div>
       <div class="panel-body">
-        <div class="form-group">
+        <div class="form-group" id="pr-mode-toggle" style="display:flex;gap:8px;">
+          <button class="btn btn-secondary" id="pr-mode-assisted" onclick="setRuleMode('assisted')">Assisted (NL)</button>
+          <button class="btn btn-secondary" id="pr-mode-raw" onclick="setRuleMode('raw')">Raw SML</button>
+        </div>
+        <div class="form-group" id="pr-nl-group">
           <label class="form-label">Describe the policy rule in plain English</label>
           <textarea class="form-textarea" id="pr-natural-language"
             placeholder="Do not allow requests to extract DAO member wallet addresses or real-world identities"></textarea>
@@ -758,19 +843,67 @@
           <input type="range" class="range-slider" id="pr-threshold" min="0.50" max="0.99" step="0.01" value="0.75"
             oninput="document.getElementById('pr-threshold-val').textContent = this.value">
         </div>
-        <div class="checker-controls">
-          <button class="btn btn-primary" id="pr-compile-btn" onclick="compileRule()">Compile Rule</button>
-          <button class="btn btn-secondary" id="pr-save-btn" onclick="saveRule()" disabled>Save Rule</button>
+        <div class="checker-controls" id="pr-draft-controls">
+          <button class="btn btn-primary" id="pr-compile-btn" onclick="compileRule()">Compile Draft</button>
         </div>
         <div class="form-group" style="margin-top:12px;">
-          <label class="form-label">Compiled SML</label>
-          <div class="sml-preview" id="pr-sml-preview">-- compile to see SML --</div>
+          <label class="form-label">Osprey SML <span style="color:var(--text2);font-weight:400;">(editable)</span></label>
+          <textarea class="form-textarea" id="pr-sml-editor" spellcheck="false"
+            style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;min-height:90px;"
+            placeholder="-- compile a draft, or write SML directly --" oninput="onSmlChanged()"></textarea>
         </div>
-        <div class="form-group" id="pr-test-section" style="display:none;">
-          <label class="form-label">Test Against Prompt</label>
+        <div class="checker-controls">
+          <button class="btn btn-secondary" id="pr-validate-btn" onclick="validateRule()">Validate</button>
+          <button class="btn btn-secondary" id="pr-feedback-btn" onclick="getAiFeedback()">⭐ Get AI feedback</button>
+          <button class="btn btn-secondary" id="pr-probe-btn" onclick="probeRule()">Adversarial probe</button>
+          <button class="btn btn-primary" id="pr-save-btn" onclick="saveRule()" disabled>Save / Deploy</button>
+        </div>
+        <div id="pr-validation-msg" style="margin-top:8px;font-size:12px;"></div>
+        <div class="form-group" id="pr-test-section" style="margin-top:12px;">
+          <label class="form-label">Preview Against Prompt</label>
           <input type="text" class="form-input" id="pr-test-prompt" placeholder="Enter a test prompt...">
-          <button class="btn btn-secondary" style="margin-top:8px;" onclick="testRule()">Test</button>
+          <button class="btn btn-secondary" style="margin-top:8px;" onclick="testRule()">Preview</button>
           <div class="result-card" id="pr-test-result" style="margin-top:8px;"></div>
+        </div>
+        <div class="form-group" id="pr-feedback-panel" style="display:none;margin-top:12px;">
+          <label class="form-label">⭐ AI Feedback <span style="color:var(--text2);font-weight:400;">(advisory — never auto-saves)</span></label>
+          <div class="result-card" id="pr-feedback-body"></div>
+        </div>
+        <div class="form-group" id="pr-probe-panel" style="display:none;margin-top:12px;">
+          <label class="form-label">Adversarial Probe (Sheila)</label>
+          <div class="result-card" id="pr-probe-body"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2b: Sara weak spots (per-leaf F1 from the RL benchmark) — OS-05 -->
+    <div class="panel rules-full-width" id="f1-panel">
+      <div class="panel-header">
+        Sara Weak Spots — per-leaf F1
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;float:right;"
+          onclick="refreshF1()">Recompute from benchmark</button>
+      </div>
+      <div class="panel-body">
+        <p style="font-size:11px; color:var(--text2); margin-bottom:12px;">
+          Per-leaf F1 from the RL exit-gate benchmark. Leaves below 0.60 are where Sara's
+          classifier misses attacks most often — tighten or add rules for those categories.
+        </p>
+        <div id="f1-list">
+          <p class="empty-state">Open this tab to load benchmark scores.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2c: Vertical default rule packs — OS-04 -->
+    <div class="panel rules-full-width" id="vertical-packs-panel">
+      <div class="panel-header">Vertical Rule Packs</div>
+      <div class="panel-body">
+        <p style="font-size:11px; color:var(--text2); margin-bottom:12px;">
+          Pre-compiled rule packs for regulated verticals. Installing copies the pack's rules into
+          <code id="vp-org-label">this org</code> as editable PolicyRules.
+        </p>
+        <div id="vertical-packs-list">
+          <p class="empty-state">Open this tab to load available packs.</p>
         </div>
       </div>
     </div>
@@ -836,11 +969,69 @@
   </div>
 </div>
 
+<!-- TAB: Collaborative Red Teaming -->
+<div id="tab-crt" class="tab-panel">
+  <div class="crt-layout">
+
+    <!-- Campaigns list -->
+    <div class="panel">
+      <div class="panel-header">
+        Campaigns
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="loadCRTCampaigns()">Refresh</button>
+      </div>
+      <div class="panel-body" style="padding:0;">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Target</th>
+              <th>Status</th>
+              <th style="text-align:center">Orgs</th>
+              <th>Coverage</th>
+            </tr>
+          </thead>
+          <tbody id="crt-campaigns-tbody">
+            <tr class="loading-row"><td colspan="5"><span class="spinner"></span> Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Campaign detail -->
+    <div class="panel">
+      <div class="panel-header" id="crt-detail-header">
+        Campaign Detail
+      </div>
+      <div class="panel-body" id="crt-detail-body">
+        <p style="color:var(--text2);text-align:center;padding:32px 0;">Click a campaign row to view detail.</p>
+      </div>
+    </div>
+
+    <!-- Privacy note + sample badge -->
+    <div class="panel crt-full-width">
+      <div class="panel-body" style="padding:10px 16px;display:flex;align-items:center;gap:12px;">
+        <span style="font-size:11px;color:var(--text2);">
+          <strong>Coverage is public. Attribution is private.</strong>
+          The coverage map shows which DAO safety leaves are covered and at what score.
+          Org identity never appears in this view — attribution is stored in a private table and is
+          never serialised into any public artifact.
+        </span>
+        <span id="crt-sample-badge" style="display:none;white-space:nowrap;padding:2px 8px;
+          border-radius:10px;font-size:10px;font-weight:700;
+          background:var(--orange-dim);color:var(--orange);">SAMPLE DATA</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <script>
 const API = window.location.origin;
 let allBreaches = [];
 let activeCategory = null;
 let compiledRule = null;
+let ruleMode = 'assisted';   // 'assisted' (NL) | 'raw' (SML)
+let ruleValidated = false;   // gates Save/Deploy
 let orgId = new URLSearchParams(window.location.search).get('org_id') || 'dao-001';
 
 const CATEGORY_NAMES = {
@@ -874,8 +1065,14 @@ function switchTab(tabId) {
   document.getElementById(tabId).classList.add('active');
   document.getElementById('tab-btn-' + tabId.replace('tab-','')).classList.add('active');
   if (tabId === 'tab-policy') {
+    setRuleMode(ruleMode);
     loadRules();
     loadEvents();
+    loadF1WeakSpots();
+    loadVerticalPacks();
+  }
+  if (tabId === 'tab-crt') {
+    loadCRTCampaigns();
   }
 }
 
@@ -1132,6 +1329,155 @@ async function toggleRule(ruleId, enabled) {
   }
 }
 
+// --- OS-05: per-leaf F1 weak spots from the RL benchmark ---
+function f1Color(f1) {
+  if (f1 < 0.60) return 'var(--red)';
+  if (f1 < 0.75) return 'var(--orange)';
+  return 'var(--green)';
+}
+
+function renderF1(stats) {
+  const el = document.getElementById('f1-list');
+  if (!stats || stats.length === 0) {
+    el.innerHTML = '<p class="empty-state">No benchmark data yet — run the RL eval, then Recompute.</p>';
+    return;
+  }
+  el.innerHTML = stats.map(s => {
+    const f1 = Number(s.f1) || 0;
+    const pct = Math.round(f1 * 100);
+    const color = f1Color(f1);
+    const name = (CATEGORY_NAMES[s.category] || CRT_LEAF_NAMES[s.category] || s.category);
+    return `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+        <span>${escapeHtml(name)}</span>
+        <span style="color:${color};font-weight:600;">F1 ${f1.toFixed(2)}
+          <span style="color:var(--text2);font-weight:400;">
+            · P ${(Number(s.precision)||0).toFixed(2)} · R ${(Number(s.recall)||0).toFixed(2)} · n=${s.sample_count||0}</span>
+        </span>
+      </div>
+      <div style="height:8px;background:var(--bg);border-radius:4px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:${color};"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadF1WeakSpots() {
+  const el = document.getElementById('f1-list');
+  el.innerHTML = '<p class="empty-state"><span class="spinner"></span> Loading...</p>';
+  try {
+    const resp = await fetch(`${API}/osprey/benchmark/f1`);
+    const data = await resp.json();
+    renderF1(data.leaf_f1 || []);
+  } catch (e) {
+    el.innerHTML = `<p class="empty-state">Failed to load F1: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function refreshF1() {
+  const el = document.getElementById('f1-list');
+  el.innerHTML = '<p class="empty-state"><span class="spinner"></span> Recomputing from benchmark...</p>';
+  try {
+    const resp = await fetch(`${API}/osprey/benchmark/f1/refresh`, { method: 'POST' });
+    const data = await resp.json();
+    if ((data.refreshed || 0) === 0 && !(data.leaf_f1 || []).length) {
+      el.innerHTML = `<p class="empty-state">${escapeHtml(data.message || 'No benchmark data available yet.')}</p>`;
+      return;
+    }
+    renderF1(data.leaf_f1 || []);
+  } catch (e) {
+    el.innerHTML = `<p class="empty-state">Recompute failed: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+// --- OS-04: vertical default rule packs ---
+const VERTICAL_PACK_NAMES = {
+  insurance: 'Insurance',
+  critical_infrastructure: 'Critical Infrastructure',
+};
+
+async function loadVerticalPacks() {
+  const el = document.getElementById('vertical-packs-list');
+  const label = document.getElementById('vp-org-label');
+  if (label) label.textContent = orgId;
+  el.innerHTML = '<p class="empty-state"><span class="spinner"></span> Loading...</p>';
+  try {
+    const resp = await fetch(`${API}/osprey/vertical-defaults`);
+    const data = await resp.json();
+    const packs = data.packs || [];
+    if (packs.length === 0) {
+      el.innerHTML = '<p class="empty-state">No vertical packs available.</p>';
+      return;
+    }
+    el.innerHTML = packs.map(p => {
+      const name = VERTICAL_PACK_NAMES[p.pack] || p.pack;
+      const cats = (p.categories || []).join(', ');
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;
+          padding:10px;margin-bottom:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);">
+        <div>
+          <div style="font-weight:600;">${escapeHtml(name)}</div>
+          <div style="font-size:11px;color:var(--text2);">${p.rule_count} rules · ${escapeHtml(cats)}</div>
+        </div>
+        <button class="btn btn-primary" style="font-size:11px;padding:6px 12px;"
+          id="vp-install-${escapeHtml(p.pack)}" onclick="installPack('${escapeHtml(p.pack)}')">Install</button>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = `<p class="empty-state">Failed to load packs: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+async function installPack(pack) {
+  const btn = document.getElementById('vp-install-' + pack);
+  if (btn) { btn.disabled = true; btn.textContent = 'Installing...'; }
+  try {
+    const resp = await fetch(`${API}/osprey/vertical-defaults/${pack}/install`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ org_id: orgId, created_by: 'analyst' }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    if (btn) { btn.textContent = `Installed (${data.count})`; }
+    loadRules();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Install'; }
+    alert('Install failed: ' + e.message);
+  }
+}
+
+// Toggle between assisted (NL) and raw-SML authoring modes.
+function setRuleMode(mode) {
+  ruleMode = mode;
+  document.getElementById('pr-nl-group').style.display = mode === 'assisted' ? 'block' : 'none';
+  document.getElementById('pr-draft-controls').style.display = mode === 'assisted' ? 'flex' : 'none';
+  const a = document.getElementById('pr-mode-assisted');
+  const r = document.getElementById('pr-mode-raw');
+  a.classList.toggle('btn-primary', mode === 'assisted');
+  a.classList.toggle('btn-secondary', mode !== 'assisted');
+  r.classList.toggle('btn-primary', mode === 'raw');
+  r.classList.toggle('btn-secondary', mode !== 'raw');
+}
+
+// Any edit to the SML invalidates a prior validation — Save must be re-gated.
+function onSmlChanged() {
+  ruleValidated = false;
+  document.getElementById('pr-save-btn').disabled = true;
+}
+
+function rulePayload() {
+  return {
+    org_id: orgId,
+    natural_language: document.getElementById('pr-natural-language').value.trim(),
+    osprey_sml: document.getElementById('pr-sml-editor').value.trim(),
+    category: document.getElementById('pr-category').value,
+    severity: document.getElementById('pr-severity').value,
+    action: document.getElementById('pr-action').value,
+    confidence_threshold: parseFloat(document.getElementById('pr-threshold').value),
+  };
+}
+
+// Assisted mode: model drafts SML into the editor. Does NOT persist.
 async function compileRule() {
   const nl = document.getElementById('pr-natural-language').value.trim();
   if (!nl) return;
@@ -1139,7 +1485,7 @@ async function compileRule() {
   btn.disabled = true;
   btn.textContent = 'Compiling...';
   try {
-    const resp = await fetch(`${API}/osprey/rules`, {
+    const resp = await fetch(`${API}/osprey/rules/draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1152,44 +1498,101 @@ async function compileRule() {
     });
     const data = await resp.json();
     if (data.error) {
-      document.getElementById('pr-sml-preview').textContent = 'Error: ' + data.error;
-      compiledRule = null;
+      setValidationMsg('Error: ' + data.error, true);
     } else {
-      compiledRule = data;
-      document.getElementById('pr-sml-preview').textContent = data.osprey_sml;
-      document.getElementById('pr-save-btn').disabled = false;
-      document.getElementById('pr-test-section').style.display = 'block';
+      document.getElementById('pr-sml-editor').value = data.osprey_sml || '';
+      onSmlChanged();
+      setValidationMsg('Draft compiled — review/edit, then Validate.', false);
     }
   } catch (e) {
-    document.getElementById('pr-sml-preview').textContent = 'Error: ' + e.message;
-    compiledRule = null;
+    setValidationMsg('Error: ' + e.message, true);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Compile Rule';
+    btn.textContent = 'Compile Draft';
   }
 }
 
-async function saveRule() {
-  if (!compiledRule) return;
-  // Rule is already saved on compile; just refresh list
-  document.getElementById('pr-save-btn').textContent = 'Saved!';
-  setTimeout(() => { document.getElementById('pr-save-btn').textContent = 'Save Rule'; }, 1500);
-  loadRules();
+function setValidationMsg(msg, isError) {
+  const el = document.getElementById('pr-validation-msg');
+  el.style.color = isError ? 'var(--orange)' : 'var(--text2)';
+  el.innerHTML = msg;
 }
 
-async function testRule() {
-  const prompt = document.getElementById('pr-test-prompt').value.trim();
-  if (!prompt || !compiledRule) return;
-  const resultEl = document.getElementById('pr-test-result');
-  resultEl.classList.add('visible');
-  resultEl.innerHTML = '<span class="spinner"></span> Testing...';
+// Deterministic validation — gates Save/Deploy.
+async function validateRule() {
+  const sml = document.getElementById('pr-sml-editor').value.trim();
+  if (!sml) { setValidationMsg('Write or compile a rule first.', true); return; }
   try {
-    const resp = await fetch(`${API}/osprey/rules/${compiledRule.rule_id}/test`, {
+    const resp = await fetch(`${API}/osprey/rules/validate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({
+        osprey_sml: sml,
+        action: document.getElementById('pr-action').value,
+        severity: document.getElementById('pr-severity').value,
+      }),
     });
     const data = await resp.json();
+    if (data.valid) {
+      ruleValidated = true;
+      document.getElementById('pr-save-btn').disabled = false;
+      setValidationMsg('✓ Valid — ready to Save / Deploy.', false);
+    } else {
+      ruleValidated = false;
+      document.getElementById('pr-save-btn').disabled = true;
+      setValidationMsg('✗ ' + (data.errors || []).map(escapeHtml).join('<br>✗ '), true);
+    }
+  } catch (e) {
+    setValidationMsg('Error: ' + e.message, true);
+  }
+}
+
+// Save / Deploy — only enabled after validation passes. Persists via the SAME
+// POST /osprey/rules path used by agent-initiated rules.
+async function saveRule() {
+  if (!ruleValidated) { setValidationMsg('Validate before saving.', true); return; }
+  const btn = document.getElementById('pr-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(rulePayload()),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      setValidationMsg('Save failed: ' + (data.errors ? data.errors.join('; ') : data.error), true);
+      btn.textContent = 'Save / Deploy';
+      return;
+    }
+    btn.textContent = 'Saved!';
+    setValidationMsg('✓ Rule saved (v' + (data.version || 1) + ', by ' + escapeHtml(data.created_by || 'analyst') + ').', false);
+    ruleValidated = false;
+    setTimeout(() => { btn.textContent = 'Save / Deploy'; }, 1500);
+    loadRules();
+  } catch (e) {
+    setValidationMsg('Save failed: ' + e.message, true);
+    btn.textContent = 'Save / Deploy';
+  }
+}
+
+// Preview an UNSAVED rule against a sample prompt.
+async function testRule() {
+  const prompt = document.getElementById('pr-test-prompt').value.trim();
+  const sml = document.getElementById('pr-sml-editor').value.trim();
+  if (!prompt || !sml) return;
+  const resultEl = document.getElementById('pr-test-result');
+  resultEl.classList.add('visible');
+  resultEl.innerHTML = '<span class="spinner"></span> Previewing...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules/test-draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...rulePayload(), prompt }),
+    });
+    const data = await resp.json();
+    if (data.error) { resultEl.innerHTML = `<span style="color:var(--orange);">${escapeHtml(data.error)}</span>`; return; }
     resultEl.innerHTML = `
       <div class="result-verdict">
         ${data.matched ? '<span class="verdict-block">MATCHED</span>' : '<span class="verdict-allow">NO MATCH</span>'}
@@ -1202,6 +1605,88 @@ async function testRule() {
     `;
   } catch (e) {
     resultEl.innerHTML = `<span style="color:var(--orange);">Error: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+// ⭐ Frontier-model qualitative review of the rule in the editor. Advisory only.
+async function getAiFeedback() {
+  const sml = document.getElementById('pr-sml-editor').value.trim();
+  if (!sml) { setValidationMsg('Write or compile a rule first.', true); return; }
+  const panel = document.getElementById('pr-feedback-panel');
+  const body = document.getElementById('pr-feedback-body');
+  panel.style.display = 'block';
+  body.classList.add('visible');
+  body.innerHTML = '<span class="spinner"></span> Asking the frontier model...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        osprey_sml: sml,
+        natural_language: document.getElementById('pr-natural-language').value.trim(),
+        category: document.getElementById('pr-category').value,
+      }),
+    });
+    const d = await resp.json();
+    if (d.available === false) { body.innerHTML = escapeHtml(d.note || 'Feedback unavailable.'); return; }
+    let html = `
+      <dl class="result-meta">
+        <dt>Coverage</dt><dd>${escapeHtml(d.coverage || '—')}</dd>
+        <dt>Over/under-breadth</dt><dd>${escapeHtml(d.breadth || '—')}</dd>
+        <dt>Ambiguity</dt><dd>${escapeHtml(d.ambiguity || '—')}</dd>
+      </dl>`;
+    if (d.suggested_rewrite) {
+      html += `<div style="margin-top:8px;"><strong>Suggested rewrite:</strong></div>
+        <div class="sml-preview">${escapeHtml(d.suggested_rewrite)}</div>
+        <button class="btn btn-secondary" style="margin-top:6px;" onclick="applyRewrite()">Accept rewrite into editor</button>`;
+      window._lastRewrite = d.suggested_rewrite;
+    }
+    if (d.note) html += `<div style="margin-top:6px;color:var(--text2);font-size:11px;">${escapeHtml(d.note)}</div>`;
+    if (d.cached) html += `<div style="margin-top:6px;color:var(--text2);font-size:11px;">(cached)</div>`;
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = `<span style="color:var(--orange);">Error: ${escapeHtml(e.message)}</span>`;
+  }
+}
+
+// Accept the model's suggested rewrite into the editor (human still validates).
+function applyRewrite() {
+  if (!window._lastRewrite) return;
+  document.getElementById('pr-sml-editor').value = window._lastRewrite;
+  onSmlChanged();
+  setValidationMsg('Rewrite applied — Validate before saving.', false);
+}
+
+// Run Sheila (red-team) against the rule and report evasion attempts.
+async function probeRule() {
+  const sml = document.getElementById('pr-sml-editor').value.trim();
+  if (!sml) { setValidationMsg('Write or compile a rule first.', true); return; }
+  const panel = document.getElementById('pr-probe-panel');
+  const body = document.getElementById('pr-probe-body');
+  panel.style.display = 'block';
+  body.classList.add('visible');
+  body.innerHTML = '<span class="spinner"></span> Generating evasion attempts...';
+  try {
+    const resp = await fetch(`${API}/osprey/rules/probe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        osprey_sml: sml,
+        natural_language: document.getElementById('pr-natural-language').value.trim(),
+      }),
+    });
+    const d = await resp.json();
+    if (d.available === false) { body.innerHTML = 'Probe unavailable — frontier model not configured.'; return; }
+    const probes = d.probes || [];
+    if (!probes.length) { body.innerHTML = 'No evasion attempts returned.'; return; }
+    body.innerHTML = `<div style="margin-bottom:6px;"><strong>${d.evaded_count || 0}/${probes.length}</strong> attempts slip through:</div>` +
+      probes.map(p => `<div style="margin-bottom:6px;padding:6px;border-left:3px solid ${p.evades ? 'var(--orange)' : 'var(--green,#10b981)'};">
+        <div>${p.evades ? '⚠️ EVADES' : '✓ caught'} <span style="color:var(--text2);">${escapeHtml(p.technique || '')}</span></div>
+        <div style="font-size:12px;">${escapeHtml(p.attack || '')}</div>
+        ${p.rationale ? `<div style="font-size:11px;color:var(--text2);">${escapeHtml(p.rationale)}</div>` : ''}
+      </div>`).join('');
+  } catch (e) {
+    body.innerHTML = `<span style="color:var(--orange);">Error: ${escapeHtml(e.message)}</span>`;
   }
 }
 
@@ -1299,6 +1784,182 @@ function truncate(s, n) {
 document.getElementById('prompt-input').addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') classifyPrompt();
 });
+
+// ---- CRT (Collaborative Red Teaming) ----
+let _crtCampaigns = [];
+let _crtUsingSample = false;
+
+const CRT_LEAF_ORDER = [
+  'identity_access_probing', 'treasury_manipulation', 'governance_red_flags',
+  'social_engineering', 'smart_contract_exploitation', 'information_hazards',
+];
+const CRT_LEAF_NAMES = {
+  identity_access_probing:    'Identity & Access Probing',
+  treasury_manipulation:      'Treasury Manipulation',
+  governance_red_flags:       'Governance Red Flags',
+  social_engineering:         'Social Engineering',
+  smart_contract_exploitation:'Smart Contract Exploitation',
+  information_hazards:        'Information Hazards',
+};
+
+async function loadCRTCampaigns() {
+  const tbody = document.getElementById('crt-campaigns-tbody');
+  tbody.innerHTML = '<tr class="loading-row"><td colspan="5"><span class="spinner"></span> Loading...</td></tr>';
+  try {
+    const resp = await fetch(`${API}/crt/campaigns`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    _crtCampaigns = data.campaigns || [];
+    _crtUsingSample = false;
+    renderCRTCampaigns();
+  } catch (_) {
+    // Fallback to fixture served by CRTServer
+    try {
+      const fix = await fetch(`${API}/crt/fixture`).then(r => r.json());
+      _crtCampaigns = [{
+        campaign_id: fix.campaign_id,
+        target_id: fix.target_id,
+        status: 'completed',
+        participating_orgs_count: fix.participating_orgs_count,
+        coverage_fraction: fix.coverage_fraction,
+        started_at: null,
+        completed_at: null,
+      }];
+      _crtUsingSample = true;
+      renderCRTCampaigns();
+    } catch (e2) {
+      tbody.innerHTML = `<tr><td colspan="5" class="empty-state">Failed to load: ${escapeHtml(e2.message)}</td></tr>`;
+    }
+  }
+}
+
+function renderCRTCampaigns() {
+  const tbody = document.getElementById('crt-campaigns-tbody');
+  document.getElementById('crt-sample-badge').style.display = _crtUsingSample ? '' : 'none';
+
+  if (_crtCampaigns.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No campaigns. Run: python -m src.crt.cli demo</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _crtCampaigns.map(c => {
+    const pct = Math.round((c.coverage_fraction || 0) * 100);
+    const sc = c.status === 'completed' ? 'action-log' : c.status === 'active' ? 'action-alert' : 'action-stop';
+    return `<tr class="rule-row" onclick="loadCRTDetail('${escapeHtml(c.campaign_id)}')">
+      <td><code style="font-size:10px">${escapeHtml(c.campaign_id)}</code></td>
+      <td>${escapeHtml(c.target_id)}</td>
+      <td><span class="action-badge ${sc}">${escapeHtml(c.status)}</span></td>
+      <td style="text-align:center">${c.participating_orgs_count}</td>
+      <td>${pct}%</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadCRTDetail(campaignId) {
+  const header = document.getElementById('crt-detail-header');
+  const body = document.getElementById('crt-detail-body');
+  header.textContent = `Campaign: ${campaignId}`;
+  body.innerHTML = '<div style="text-align:center;padding:32px 0;"><span class="spinner"></span> Loading detail...</div>';
+
+  try {
+    let coverage, report, meta;
+    if (_crtUsingSample) {
+      const fix = await fetch(`${API}/crt/fixture`).then(r => r.json());
+      coverage = {
+        campaign_id: fix.campaign_id,
+        leaf_coverage: fix.leaf_coverage,
+        leaf_scores: fix.leaf_scores,
+        total_leaves: fix.total_leaves,
+        covered_leaves: fix.covered_leaves,
+        coverage_fraction: fix.coverage_fraction,
+        participating_orgs_count: fix.participating_orgs_count,
+      };
+      report = fix;
+      meta = { diversity_score: fix._diversity_score || 0.75 };
+    } else {
+      [coverage, report, meta] = await Promise.all([
+        fetch(`${API}/crt/campaigns/${campaignId}/coverage`).then(r => r.json()),
+        fetch(`${API}/crt/campaigns/${campaignId}/report`).then(r => r.json()),
+        fetch(`${API}/crt/campaigns/${campaignId}`).then(r => r.json()),
+      ]);
+    }
+
+    // Privacy invariant: refuse to render if org_id leaks into coverage
+    if ('org_id' in coverage) {
+      console.error('PRIVACY BREACH: org_id in coverage response');
+      body.innerHTML = '<p style="color:var(--red);padding:16px;">Privacy invariant violated — refusing to render.</p>';
+      return;
+    }
+
+    renderCRTDetail(coverage, report, meta);
+  } catch (e) {
+    body.innerHTML = `<p style="color:var(--red);padding:16px;">Error: ${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function renderCRTDetail(coverage, report, meta) {
+  const body = document.getElementById('crt-detail-body');
+  const covPct = Math.round((coverage.coverage_fraction || 0) * 100);
+  const divPct = Math.round((meta.diversity_score || 0) * 100);
+
+  const metrics = `
+    <div class="metrics-strip">
+      <div class="metric">
+        <span class="metric-label">Coverage</span>
+        <span class="metric-value">${covPct}%</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Org-Type Diversity</span>
+        <span class="metric-value">${divPct}%</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Participating Orgs</span>
+        <span class="metric-value">${coverage.participating_orgs_count}</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Leaves</span>
+        <span class="metric-value">${coverage.covered_leaves}/${coverage.total_leaves}</span>
+      </div>
+    </div>`;
+
+  const tiles = '<div class="leaf-grid">' + CRT_LEAF_ORDER.map(id => {
+    const covered = coverage.leaf_coverage?.[id] === true;
+    const score = (coverage.leaf_scores?.[id] || 0).toFixed(3);
+    return `<div class="leaf-tile ${covered ? 'covered' : 'uncovered'}">
+      <div class="leaf-name">${CRT_LEAF_NAMES[id] || id}</div>
+      <div class="leaf-score">
+        ${covered
+          ? `<span style="color:var(--green)">covered</span> &middot; score ${score}`
+          : '<span style="color:var(--text2)">not covered</span>'}
+      </div>
+    </div>`;
+  }).join('') + '</div>';
+
+  const hashBlock = report.report_hash ? `
+    <div style="margin-bottom:8px;">
+      <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;">SHA3-256 Report Hash</div>
+      <div class="report-hash">${escapeHtml(report.report_hash)}</div>
+    </div>` : '';
+
+  const zkBlock = `<div style="margin-bottom:8px;">
+    <span class="zk-badge">ZK proof: pending</span>
+    <span style="font-size:11px;color:var(--text2);margin-left:8px;">(seam for A.5-full ZK audit trail)</span>
+  </div>`;
+
+  const threshold = `<div style="font-size:12px;margin-bottom:12px;">
+    Min threshold (${Math.round((report.min_threshold || 0.8) * 100)}%):
+    <span style="font-weight:600;color:${report.min_threshold_met ? 'var(--green)' : 'var(--red)'};">
+      ${report.min_threshold_met ? 'MET' : 'NOT MET'}
+    </span>
+  </div>`;
+
+  const privacyNote = `<div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);
+      border-radius:var(--radius);font-size:11px;color:var(--text2);">
+    <strong>Coverage is public. Attribution is private.</strong>
+    Which org covered which leaf is stored in a private table and is never serialised here.
+  </div>`;
+
+  body.innerHTML = metrics + tiles + hashBlock + zkBlock + threshold + privacyNote;
+}
 </script>
 </body>
 </html>
