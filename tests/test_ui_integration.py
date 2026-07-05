@@ -746,3 +746,26 @@ class TestDAODefaultRules:
         for rule in DAO_DEFAULT_RULES:
             assert rule.created_at.tzinfo is not None, \
                 f"Rule '{rule.display_name}' has naive datetime (utcnow regression)"
+
+
+# ── Sheila rule-margin attack MODE via the redteam UI (ADR-001) ───────────────
+
+def test_redteam_rule_margin_returns_attempts():
+    client = _make_ui_client()
+    sml = ("rule no_treasury_drain { when prompt contains 'drain treasury' "
+           "or prompt contains 'transfer all funds' then block }")
+    r = client.post("/redteam/rule-margin",
+                    json={"sml_rules_text": sml, "target_id": "dao-v1", "n": 5, "seed": 0})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["count"] >= 1
+    assert all(a["targeted_rule_id"] == "no_treasury_drain" for a in data["attempts"])
+    # Deterministic: same seed → same prompts.
+    r2 = client.post("/redteam/rule-margin",
+                     json={"sml_rules_text": sml, "target_id": "dao-v1", "n": 5, "seed": 0})
+    assert [a["prompt"] for a in r2.json()["attempts"]] == [a["prompt"] for a in data["attempts"]]
+
+
+def test_redteam_rule_margin_requires_sml():
+    client = _make_ui_client()
+    assert client.post("/redteam/rule-margin", json={"sml_rules_text": ""}).status_code == 400

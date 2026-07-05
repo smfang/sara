@@ -128,6 +128,7 @@ class UIPortal:
             Route("/dpo/upload-labels", self._dpo_upload_labels, methods=["POST"]),
             Route("/redteam", self._redteam_page, methods=["GET"]),
             Route("/redteam/run", self._redteam_run, methods=["POST"]),
+            Route("/redteam/rule-margin", self._redteam_rule_margin, methods=["POST"]),
             Route("/redteam/report/{session_id}", self._redteam_report, methods=["GET"]),
             # ── Test mode ─────────────────────────────────────────────────
             Route("/ui/test/status", self._test_status, methods=["GET"]),
@@ -803,6 +804,46 @@ class UIPortal:
         session_id = uuid.uuid4().hex[:16]
         logger.info("Red team session %s started: %d probes, categories=%s", session_id, n_probes, categories)
         return JSONResponse({"status": "running", "session_id": session_id})
+
+    async def _redteam_rule_margin(self, request: Request) -> Response:
+        """Sheila red-team MODE `rule_margin`: ingest LIVE Osprey SML and return
+        deterministic edge-case attempts that satisfy each rule's constraints yet
+        carry malicious intent. Reached via the PurpleTeam interface only."""
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        sml = (body.get("sml_rules_text") or "").strip()
+        target_id = (body.get("target_id") or "dao-v1").strip()
+        try:
+            n = max(1, min(20, int(body.get("n", 5))))
+            seed = int(body.get("seed", 0))
+        except (TypeError, ValueError):
+            n, seed = 5, 0
+        if not sml:
+            return JSONResponse({"error": "sml_rules_text is required"}, status_code=400)
+
+        # PurpleTeam seam — never import agents.sheila internals here.
+        from agents.sheila.api import SheilaRedTeam
+
+        try:
+            attempts = SheilaRedTeam().rule_margin_attack(sml, target_id, n=n, seed=seed)
+        except NotImplementedError as exc:
+            return JSONResponse({"error": str(exc), "advisory": True}, status_code=501)
+
+        return JSONResponse({
+            "target_id": target_id,
+            "count": len(attempts),
+            "attempts": [
+                {
+                    "attempt_id": a.attempt_id,
+                    "prompt": a.prompt,
+                    "targeted_rule_id": a.targeted_rule_id,
+                    "evasion_note": a.evasion_note,
+                }
+                for a in attempts
+            ],
+        })
 
     async def _redteam_report(self, request: Request) -> Response:
         session_id = request.path_params["session_id"]

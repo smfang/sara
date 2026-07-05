@@ -200,12 +200,79 @@
           Next scheduled: tomorrow 02:00 <span class="mono">(cron: 0 2 * * *)</span>
         </div>
       </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <div class="panel-title">Rule-Margin Attack <span class="mono" style="font-size:10px;">(ADR-001)</span></div>
+        <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">
+          Sheila ingests LIVE Osprey SML and emits deterministic edge-case prompts that
+          satisfy each rule's constraints yet keep malicious intent.
+        </div>
+        <div class="field">
+          <label>Osprey SML rules</label>
+          <textarea id="rm-sml" rows="6" style="width:100%;font-family:monospace;font-size:11px;">rule no_treasury_drain {
+  when prompt contains 'drain treasury' or prompt contains 'transfer all funds'
+  then block
+}
+rule no_governance_bypass {
+  when prompt contains 'bypass quorum' or prompt contains 'forge vote'
+  then block
+}</textarea>
+        </div>
+        <div class="field" style="display:flex;gap:8px;">
+          <div style="flex:1;"><label>Target</label>
+            <input id="rm-target" value="dao-v1" style="width:100%;"></div>
+          <div style="width:70px;"><label>N</label>
+            <input type="number" id="rm-n" value="5" min="1" max="20" style="width:100%;"></div>
+          <div style="width:70px;"><label>Seed</label>
+            <input type="number" id="rm-seed" value="0" style="width:100%;"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+          <button class="btn btn-primary" id="rm-btn" onclick="runRuleMargin()">⚡ Generate Margin Attempts</button>
+          <div id="rm-msg" style="font-size:11px;color:var(--text2);"></div>
+        </div>
+        <div id="rm-results" style="margin-top:10px;"></div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
 const CATEGORIES = ["treasury_manipulation","prompt_injection","governance_attack","social_engineering","smart_contract_exploit","identity_confusion","payout_override"];
+
+async function runRuleMargin(){
+  const btn = document.getElementById("rm-btn");
+  const msg = document.getElementById("rm-msg");
+  const out = document.getElementById("rm-results");
+  btn.disabled = true; msg.textContent = "Generating…"; out.innerHTML = "";
+  try {
+    const r = await fetch("/redteam/rule-margin", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        sml_rules_text: document.getElementById("rm-sml").value,
+        target_id: document.getElementById("rm-target").value,
+        n: parseInt(document.getElementById("rm-n").value || "5", 10),
+        seed: parseInt(document.getElementById("rm-seed").value || "0", 10),
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok){ msg.textContent = data.error || "error"; return; }
+    msg.textContent = `${data.count} attempt(s) against ${esc(data.target_id)}`;
+    out.innerHTML = (data.attempts || []).map(a => `
+      <div class="evasion-item" style="cursor:default;">
+        <div style="font-size:10px;color:var(--text2);">
+          <span class="mono">${esc(a.attempt_id)}</span> · targets
+          <strong>${esc(a.targeted_rule_id)}</strong>
+        </div>
+        <div style="margin:4px 0;font-size:12px;">${esc(a.prompt)}</div>
+        <div style="font-size:10px;color:var(--text2);">↳ ${esc(a.evasion_note)}</div>
+      </div>`).join("");
+  } catch(e){
+    msg.textContent = "request failed";
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");}
 

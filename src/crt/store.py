@@ -51,6 +51,20 @@ class InMemoryCRTStore:
     def save_submission(self, sub: OrgSubmission) -> None:
         self._submissions[sub.submission_id] = sub
 
+    def get_confirmed_leaves(self, campaign_id: str, org_id: str) -> set[str]:
+        """Leaves an org has LOCAL data for (i.e. confirmed itself).
+
+        PRIVATE read — used only to compute the attribution-blind blind-spot
+        view in coverage_view; callers must emit leaf names, never org_id.
+        """
+        return {
+            s.taxonomy_tag_claimed
+            for s in self._submissions.values()
+            if s.campaign_id == campaign_id
+            and s.org_id == org_id
+            and s.confirmed_coverage
+        }
+
     # ── Coverage (public, no org_id) ─────────────────────────────────────────
 
     def record_coverage(self, campaign_id: str, tag: str, score: float) -> None:

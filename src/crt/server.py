@@ -15,25 +15,45 @@ import logging
 from pathlib import Path
 
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, Response
 from starlette.routing import Route
+
+import hashlib
 
 from src.crt.aggregator import CoverageAggregator
 from src.crt.coordinator import CRTCoordinator
+from src.crt.coverage_view import build_coverage_map
 from src.crt.mock_eval import MockEvaluator
 from src.crt.models import OrgProfile, OrgType
 from src.crt.report import build_report
 from src.crt.store import InMemoryCRTStore
+from src.crt.store_incidents import FederatedIncidentStore
 from src.sarabox.taxonomy import DAO_TAXONOMY
 
 logger = logging.getLogger(__name__)
 
 _DAO_LEAVES = [leaf["id"] for leaf in DAO_TAXONOMY[:6]]
 _FIXTURE_PATH = Path(__file__).parent.parent / "ui" / "crt_sample_report.json"
+_CRT_HTML_PATH = Path(__file__).parent.parent / "ui" / "crt.html"
 
 
-def _seed_demo(store: InMemoryCRTStore, aggregator: CoverageAggregator) -> None:
-    """Populate one completed demo campaign so the UI demos at startup."""
+def _mock_dp_embedding(text: str, dim: int = 8) -> list[float]:
+    """Deterministic MOCK DP-noised embedding. # A.5-full: real DP embeddings."""
+    h = hashlib.sha256(text.encode()).digest()
+    return [((h[i % len(h)] / 255.0) * 2 - 1) for i in range(dim)]
+
+
+def _seed_demo(
+    store: InMemoryCRTStore,
+    aggregator: CoverageAggregator,
+    incidents: FederatedIncidentStore,
+) -> None:
+    """Populate one completed demo campaign so the UI demos at startup.
+
+    Gamma Red Team (org C) is scoped for smart_contract_exploitation but has NO
+    local data on it; Beta covers that leaf for the federation, producing a
+    demoable blind-spot recovery.
+    """
     coordinator = CRTCoordinator(store, aggregator, MockEvaluator())
 
     orgs = [
@@ -47,7 +67,11 @@ def _seed_demo(store: InMemoryCRTStore, aggregator: CoverageAggregator) -> None:
             org_id="org-beta",
             org_type=OrgType.academic,
             display_name="Beta Academic Lab",
-            specialisation_tags=["social_engineering", "information_hazards"],
+            specialisation_tags=[
+                "social_engineering",
+                "information_hazards",
+                "smart_contract_exploitation",
+            ],
         ),
         OrgProfile(
             org_id="org-gamma",
@@ -63,11 +87,16 @@ def _seed_demo(store: InMemoryCRTStore, aggregator: CoverageAggregator) -> None:
 
     for org_id, leaves in {
         "org-alpha": ["treasury_manipulation", "governance_red_flags"],
-        "org-beta": ["social_engineering", "information_hazards"],
-        "org-gamma": ["identity_access_probing", "smart_contract_exploitation"],
+        "org-beta": ["social_engineering", "information_hazards", "smart_contract_exploitation"],
+        "org-gamma": ["identity_access_probing"],  # NO smart_contract_exploitation
     }.items():
         for leaf in leaves:
-            coordinator.submit_finding(c.campaign_id, org_id, leaf)
+            sub = coordinator.submit_finding(c.campaign_id, org_id, leaf)
+            incidents.post_incident(
+                leaf_tag=leaf,
+                dp_embedding=_mock_dp_embedding(f"{leaf}:{sub.submission_id}"),
+                prompt_sha3=hashlib.sha3_256(f"{leaf}:{sub.submission_id}".encode()).hexdigest(),
+            )
 
     coordinator.finalise_campaign(c.campaign_id)
 
@@ -87,17 +116,42 @@ class CRTServer:
     ) -> None:
         self._store = store or InMemoryCRTStore()
         self._aggregator = aggregator or CoverageAggregator(self._store)
+        self._incidents = FederatedIncidentStore()
         if seed_demo and not self._store._campaigns:
-            _seed_demo(self._store, self._aggregator)
+            _seed_demo(self._store, self._aggregator, self._incidents)
 
     def routes(self) -> list[Route]:
         return [
+            Route("/crt", self._crt_page, methods=["GET"]),
             Route("/crt/campaigns", self._list_campaigns, methods=["GET"]),
             Route("/crt/campaigns/{campaign_id}", self._get_campaign, methods=["GET"]),
             Route("/crt/campaigns/{campaign_id}/coverage", self._get_coverage, methods=["GET"]),
+            Route("/crt/campaigns/{campaign_id}/coverage-view", self._get_coverage_view, methods=["GET"]),
             Route("/crt/campaigns/{campaign_id}/report", self._get_report, methods=["GET"]),
             Route("/crt/fixture", self._get_fixture, methods=["GET"]),
         ]
+
+    async def _crt_page(self, request: Request) -> Response:
+        try:
+            return HTMLResponse(_CRT_HTML_PATH.read_text())
+        except Exception:
+            return JSONResponse({"error": "crt.html not found"}, status_code=404)
+
+    async def _get_coverage_view(self, request: Request) -> Response:
+        """Attribution-blind coverage view: adds blind_spot_recovery + the pooled
+        Federated Incident Store counts (leaf names only, never org identity)."""
+        cid = request.path_params["campaign_id"]
+        c = self._store.get_campaign(cid)
+        if c is None:
+            return JSONResponse({"error": "campaign not found"}, status_code=404)
+        view = build_coverage_map(self._store, self._aggregator, cid)
+        view["pooled_incidents"] = len(self._incidents)
+        view["blind_spot_incidents"] = {
+            leaf: len(self._incidents.incidents_for_leaf(leaf))
+            for leaf in view["blind_spot_recovery"]
+        }
+        assert "org_id" not in json.dumps(view), "PRIVACY BREACH: org_id in coverage-view"
+        return JSONResponse(view)
 
     async def _list_campaigns(self, request: Request) -> Response:
         out = []

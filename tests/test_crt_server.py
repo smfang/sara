@@ -162,3 +162,35 @@ def test_fixture_report_hash_is_64_chars(client: TestClient) -> None:
     h = data["report_hash"]
     assert len(h) == 64, f"report_hash is {len(h)} chars, expected 64"
     assert all(c in "0123456789abcdef" for c in h), "report_hash contains non-hex chars"
+
+
+# ── Coverage-view (blind-spot recovery + incident store) ──────────────────────
+
+def test_coverage_view_ok_and_no_org_id(client: TestClient) -> None:
+    cid = client.get("/crt/campaigns").json()["campaigns"][0]["campaign_id"]
+    resp = client.get(f"/crt/campaigns/{cid}/coverage-view")
+    assert resp.status_code == 200
+    assert "org_id" not in resp.text
+    for org in ("org-alpha", "org-beta", "org-gamma"):
+        assert org not in resp.text
+
+
+def test_coverage_view_reports_blind_spot_recovery(client: TestClient) -> None:
+    cid = client.get("/crt/campaigns").json()["campaigns"][0]["campaign_id"]
+    v = client.get(f"/crt/campaigns/{cid}/coverage-view").json()
+    # Gamma (org C) was scoped for smart_contract_exploitation but had no local
+    # data; the federation covered it.
+    assert "smart_contract_exploitation" in v["blind_spot_recovery"]
+    assert v["coverage_fraction"] == 1.0
+    assert v["pooled_incidents"] >= 6
+    assert v["blind_spot_incidents"]["smart_contract_exploitation"] >= 1
+
+
+def test_coverage_view_not_found(client: TestClient) -> None:
+    assert client.get("/crt/campaigns/nope/coverage-view").status_code == 404
+
+
+def test_crt_page_served(client: TestClient) -> None:
+    resp = client.get("/crt")
+    assert resp.status_code == 200
+    assert "Collaborative Red Teaming" in resp.text

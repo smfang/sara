@@ -333,6 +333,22 @@ async def test_save_evaluation_accepts_tx_hash():
     store.save_evaluation.assert_awaited_once_with(result, tx_hash="tx-123")
 
 
+def test_row_to_evaluation_tolerates_gdpr_hash_column():
+    """Regression: save_evaluation stores SHA3-256(evaluations_json) in column 2
+    (GDPR — raw per-prompt evals never persisted), so read-back must NOT json.loads
+    it. Previously this raised JSONDecodeError and 500'd GET /api/submissions."""
+    from src.arena.store import _row_to_evaluation
+
+    evals_hash = hashlib.sha3_256(b"[...]").hexdigest()  # 64-hex, not JSON
+    row = ("sub-1", "bounty-1", evals_hash, 0.3, 0.3, "{}", 0.0, 123.0, "tx", "prev")
+    ev = _row_to_evaluation(row)
+    assert ev.submission_id == "sub-1"
+    assert ev.total_score == 0.3
+    assert ev.payout_usdc == 0.3
+    assert ev.prompt_evaluations == []      # not reconstructable from the hash
+    assert ev.category_coverage == {}
+
+
 # ── Fix 4: ERC8004 attestation ────────────────────────────────────────────────
 
 

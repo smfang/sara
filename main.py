@@ -125,33 +125,29 @@ def build_x402(
 
 def build_safety_classifier() -> SafetyClassifier:
     api = CONFIG.model_api
-    if api == "kimi":
-        return SafetyClassifier(
-            api_key=CONFIG.moonshot_api_key or CONFIG.model_api_key,
-            model_name="moonshot-v1-8k",
-            endpoint="https://api.moonshot.ai/v1",
-            api_format="openai",
-        )
-    if api == "deepseek":
-        return SafetyClassifier(
-            api_key=CONFIG.deepseek_api_key or CONFIG.model_api_key,
-            model_name=CONFIG.safety_classifier_model,
-            endpoint="https://api.deepseek.com/v1",
-            api_format="openai",
-        )
-    if api == "glm":
-        return SafetyClassifier(
-            api_key=CONFIG.zhipu_api_key or CONFIG.model_api_key,
-            model_name=CONFIG.safety_classifier_model,
-            endpoint="https://open.bigmodel.cn/api/paas/v4",
-            api_format="openai",
-        )
-    # anthropic or custom openapi endpoint
+    # Per-provider preset: (default_model, default_endpoint, api_format, api_key).
+    # SAFETY_CLASSIFIER_MODEL / SAFETY_CLASSIFIER_ENDPOINT override the defaults
+    # for any provider when set; blank falls back to the provider default.
+    presets: dict[str, tuple[str, str, str, str]] = {
+        "kimi": ("moonshot-v1-8k", "https://api.moonshot.ai/v1", "openai",
+                 CONFIG.moonshot_api_key or CONFIG.model_api_key),
+        "deepseek": ("deepseek-chat", "https://api.deepseek.com/v1", "openai",
+                     CONFIG.deepseek_api_key or CONFIG.model_api_key),
+        "glm": ("glm-4-flash", "https://open.bigmodel.cn/api/paas/v4", "openai",
+                CONFIG.zhipu_api_key or CONFIG.model_api_key),
+        "anthropic": ("claude-sonnet-4-5-20250929", "https://api.anthropic.com", "anthropic",
+                      CONFIG.model_api_key),
+    }
+    default_model, default_endpoint, api_format, api_key = presets.get(
+        api,
+        # openai / custom openapi endpoint
+        ("gpt-4o-mini", "https://api.openai.com/v1", "openai", CONFIG.model_api_key),
+    )
     return SafetyClassifier(
-        api_key=CONFIG.model_api_key,
-        model_name=CONFIG.safety_classifier_model,
-        endpoint=CONFIG.safety_classifier_endpoint,
-        api_format="anthropic" if api == "anthropic" else "openai",
+        api_key=api_key,
+        model_name=CONFIG.safety_classifier_model or default_model,
+        endpoint=CONFIG.safety_classifier_endpoint or default_endpoint,
+        api_format=api_format,
     )
 
 

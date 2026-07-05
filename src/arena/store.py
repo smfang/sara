@@ -809,9 +809,19 @@ def _row_to_submission(row: tuple) -> Submission:
 
 
 def _row_to_evaluation(row: tuple) -> EvaluationResult:
-    evals_data = json.loads(str(row[2]))
-    prompt_evals = [PromptEvaluation(**e) for e in evals_data]
-    category_cov = json.loads(str(row[5]))
+    # CAT-05 GDPR: column 2 stores SHA3-256(evaluations_json), NOT the raw JSON,
+    # so the per-prompt evaluations are intentionally not reconstructable on read.
+    # Tolerate both the hash (normal) and, defensively, legacy raw-JSON rows.
+    raw_evals = str(row[2])
+    try:
+        evals_data = json.loads(raw_evals)
+        prompt_evals = [PromptEvaluation(**e) for e in evals_data]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        prompt_evals = []  # only the GDPR hash was stored
+    try:
+        category_cov = json.loads(str(row[5]))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        category_cov = {}
     return EvaluationResult(
         submission_id=str(row[0]),
         bounty_id=str(row[1]),

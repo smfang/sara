@@ -73,10 +73,13 @@ class Config(BaseSettings):
     """cumulative USDC spending limit for x402 client"""
 
     # safety classifier config
-    safety_classifier_model: str = "claude-sonnet-4-5-20250929"
-    """model to use for the LLM-as-judge safety classifier"""
-    safety_classifier_endpoint: str = "https://api.anthropic.com"
-    """API endpoint for the safety classifier"""
+    safety_classifier_model: str = ""
+    """Override model for the LLM-as-judge safety classifier.
+    Blank = use the per-provider default (see build_safety_classifier).
+    env: SAFETY_CLASSIFIER_MODEL"""
+    safety_classifier_endpoint: str = ""
+    """Override API endpoint for the safety classifier.
+    Blank = use the per-provider default. env: SAFETY_CLASSIFIER_ENDPOINT"""
 
     # Ozone enforcement
     ozone_enabled: bool = True

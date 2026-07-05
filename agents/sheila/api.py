@@ -106,3 +106,23 @@ class SheilaRedTeam:
             n_probes=n_probes,
             signing_secret=signing_secret,
         )
+
+    def rule_margin_attack(
+        self,
+        sml_rules_text: str,
+        target_id: str,
+        n: int = 5,
+        seed: int = 0,
+    ):
+        """
+        Red-team MODE ``rule_margin`` (ADR-001): ingest LIVE Osprey SML rules and
+        return deterministic edge-case attempts that satisfy each rule's
+        constraints yet carry malicious intent. Returns list[MarginAttempt].
+
+        Callers reach this ONLY through this interface — never sheila internals.
+        """
+        fn = getattr(self._backend, "rule_margin_attack", None)
+        if fn is None:
+            # A.5-full: rule_margin over the A2A/TEE backend
+            raise NotImplementedError("rule_margin_attack not available over A2A backend")
+        return fn(sml_rules_text=sml_rules_text, target_id=target_id, n=n, seed=seed)

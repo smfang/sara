@@ -19,13 +19,26 @@ import json
 
 import click
 
+import hashlib
+
 from src.crt.aggregator import CoverageAggregator
 from src.crt.coordinator import CRTCoordinator
+from src.crt.coverage_view import build_coverage_map
 from src.crt.mock_eval import MockEvaluator
 from src.crt.models import CoverageMap, OrgProfile, OrgType
 from src.crt.report import build_report
 from src.crt.store import InMemoryCRTStore
+from src.crt.store_incidents import FederatedIncidentStore
 from src.sarabox.taxonomy import DAO_TAXONOMY
+
+
+def _mock_dp_embedding(text: str, dim: int = 8) -> list[float]:
+    """Deterministic MOCK DP-noised embedding derived from a hash of *text*.
+
+    # A.5-full: real sentence embedding + calibrated DP noise (epsilon ~ 1).
+    """
+    h = hashlib.sha256(text.encode()).digest()
+    return [((h[i % len(h)] / 255.0) * 2 - 1) for i in range(dim)]
 
 
 def _make_stack() -> tuple[InMemoryCRTStore, CoverageAggregator, CRTCoordinator]:
@@ -72,8 +85,14 @@ def demo() -> None:
             org_id="org-acad-02",
             org_type=OrgType.academic,
             display_name="University Red Lab",
-            specialisation_tags=["social_engineering", "information_hazards"],
+            specialisation_tags=[
+                "social_engineering",
+                "information_hazards",
+                "smart_contract_exploitation",
+            ],
         ),
+        # Org C — scoped for smart_contract_exploitation but has NO local data
+        # for it; the federation will cover that leaf on its behalf.
         OrgProfile(
             org_id="org-rt-03",
             org_type=OrgType.red_team,
@@ -92,17 +111,27 @@ def demo() -> None:
 
     click.echo()
 
-    # Step 3: Each org submits their assigned leaves
+    # Step 3: Each org submits confirmed findings. Org C (org-rt-03) submits
+    # ONLY identity_access_probing — it has no local data on
+    # smart_contract_exploitation. org-acad-02 covers that leaf for the federation.
+    incident_store = FederatedIncidentStore()
     assignments = {
         "org-dao-01": ["treasury_manipulation", "governance_red_flags"],
-        "org-acad-02": ["social_engineering", "information_hazards"],
-        "org-rt-03":   ["identity_access_probing", "smart_contract_exploitation"],
+        "org-acad-02": ["social_engineering", "information_hazards", "smart_contract_exploitation"],
+        "org-rt-03":   ["identity_access_probing"],
     }
     all_subs = []
     for org_id, leaves in assignments.items():
         org_name = next(o.display_name for o in orgs if o.org_id == org_id)
         for leaf in leaves:
             sub = coordinator.submit_finding(campaign.campaign_id, org_id, leaf)
+            # Pool a DP-noised, attribution-blind incident (no org_id, sha3 only).
+            prompt_sha3 = hashlib.sha3_256(f"{leaf}:{sub.submission_id}".encode()).hexdigest()
+            incident_store.post_incident(
+                leaf_tag=leaf,
+                dp_embedding=_mock_dp_embedding(f"{leaf}:{sub.submission_id}"),
+                prompt_sha3=prompt_sha3,
+            )
             cmap = aggregator.get_coverage_map(campaign.campaign_id)
             all_subs.append(sub)
             bar = _coverage_bar(cmap.leaf_coverage, dao_leaves)
@@ -112,6 +141,8 @@ def demo() -> None:
             )
 
     click.echo()
+    click.echo(f"Federated Incident Store: {len(incident_store)} pooled incidents "
+               f"(no identity, SHA3 handles only)")
 
     # Step 4: Per-org summary
     click.echo("Per-org credits:")
@@ -122,6 +153,19 @@ def demo() -> None:
 
     diversity = aggregator.diversity_score(campaign.campaign_id)
     click.echo(f"\nDiversity score: {diversity:.2f}  (distinct org types / 4)")
+
+    # Step 4b: Blind-spot recovery — the presentation payload.
+    view = build_coverage_map(store, aggregator, campaign.campaign_id)
+    click.echo(f"\nBlind-spot recovery: {view['blind_spot_recovery']}")
+    for leaf in view["blind_spot_recovery"]:
+        # The DAO retelling of the paper's missing-class recovery (75.85% -> 91.47%):
+        # a scoped org had no local data on this leaf; the federation caught it.
+        matches = incident_store.incidents_for_leaf(leaf)
+        click.echo(
+            f"  Org C (Adversarial Security Group) had NO local data on "
+            f"'{leaf}' — the federation's shared coverage caught it "
+            f"({len(matches)} pooled incident(s) now searchable by every org)."
+        )
 
     # Step 5: Finalise
     click.echo()

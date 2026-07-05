@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sara — Collaborative Red Teaming</title>
+<style>
+  :root { --bg:#d2b48c; --card:#dfc99e; --border:#c09060; --ink:#2a1e12; --ink2:#6b5040;
+          --accent:#4a5bc8; --ok:#2e7d32; --gap:#b23b3b; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; background: var(--bg);
+         color: var(--ink); margin: 0; padding: 24px; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--ink2); font-size: 13px; margin-bottom: 20px; }
+  .badge { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+          padding: 18px 20px; margin-bottom: 16px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  select, button { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--border);
+                   background: #efe0bf; color: var(--ink); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  .leaf { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 14px; }
+  .bar { flex: 1; height: 14px; background: #c9b48c; border-radius: 7px; overflow: hidden; }
+  .fill { height: 100%; background: var(--ok); }
+  .leaf .name { width: 260px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .leaf .score { width: 48px; text-align: right; color: var(--ink2); font-size: 12px; }
+  .pill { display:inline-block; background:#f3e6c8; border:1px solid var(--border); border-radius:20px;
+          padding:3px 10px; margin:3px 4px 0 0; font-size:12px; }
+  .blind { border-left: 4px solid var(--gap); }
+  .blind h3 { margin: 0 0 6px; color: var(--gap); font-size: 15px; }
+  .recovery { background:#f7ecd6; border:1px dashed var(--gap); border-radius:8px; padding:10px 12px;
+              margin-top:8px; font-size:13.5px; }
+  .stat { font-size: 26px; font-weight: 700; }
+  .stat small { font-size: 12px; font-weight: 400; color: var(--ink2); display:block; }
+  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .muted { color: var(--ink2); font-size: 12px; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>⬡ Sara <span class="badge">Collaborative Red Teaming</span></h1>
+  <div class="sub">Coverage is shared; attribution is private. Federated Incident Store turns
+    "orgs coordinated" into "orgs made each other stronger."</div>
+
+  <div class="card">
+    <div class="row">
+      <strong>Campaign:</strong>
+      <select id="campaign" onchange="loadView()"></select>
+      <span id="status" class="muted"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div><div class="stat" id="stat-coverage">—<small>coverage</small></div></div>
+      <div><div class="stat" id="stat-orgs">—<small>participating orgs</small></div></div>
+      <div><div class="stat" id="stat-incidents">—<small>pooled incidents</small></div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-top:0;">Per-leaf coverage</h3>
+    <div id="leaves"></div>
+  </div>
+
+  <div class="card blind">
+    <h3>Blind-spot recovery</h3>
+    <div class="muted">Leaves an enrolled org was scoped for but had no local data on —
+      caught by the federation. (Names leaves only, never which org.)</div>
+    <div id="blind"></div>
+  </div>
+
+  <div class="muted">Privacy: this page calls <code>/crt/campaigns/{id}/coverage-view</code>,
+    which is asserted to contain no <code>org_id</code>. Raw endpoints:
+    <a href="/crt/campaigns" target="_blank">/crt/campaigns</a> ·
+    <span id="raw-links"></span></div>
+</div>
+
+<script>
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;");}
+
+async function loadCampaigns(){
+  const r = await fetch("/crt/campaigns");
+  const data = await r.json();
+  const sel = document.getElementById("campaign");
+  sel.innerHTML = "";
+  (data.campaigns || []).forEach(c => {
+    const o = document.createElement("option");
+    o.value = c.campaign_id;
+    o.textContent = `${c.target_id} (${c.campaign_id.slice(0,8)}…)`;
+    sel.appendChild(o);
+  });
+  if (sel.value) loadView();
+}
+
+async function loadView(){
+  const cid = document.getElementById("campaign").value;
+  if (!cid) return;
+  document.getElementById("raw-links").innerHTML =
+    `<a href="/crt/campaigns/${cid}/coverage-view" target="_blank">/coverage-view</a> · ` +
+    `<a href="/crt/campaigns/${cid}/report" target="_blank">/report</a>`;
+  const r = await fetch(`/crt/campaigns/${cid}/coverage-view`);
+  const v = await r.json();
+
+  document.getElementById("status").textContent =
+    `${v.covered_leaves}/${v.total_leaves} leaves covered`;
+  document.getElementById("stat-coverage").innerHTML =
+    `${Math.round((v.coverage_fraction||0)*100)}%<small>coverage</small>`;
+  document.getElementById("stat-orgs").innerHTML =
+    `${v.participating_orgs_count}<small>participating orgs</small>`;
+  document.getElementById("stat-incidents").innerHTML =
+    `${v.pooled_incidents}<small>pooled incidents</small>`;
+
+  const leaves = document.getElementById("leaves");
+  leaves.innerHTML = "";
+  Object.keys(v.leaf_coverage || {}).forEach(name => {
+    const covered = v.leaf_coverage[name];
+    const score = v.leaf_scores[name] || 0;
+    const div = document.createElement("div");
+    div.className = "leaf";
+    div.innerHTML =
+      `<span class="name">${covered ? "✓" : "✗"} ${esc(name)}</span>` +
+      `<span class="bar"><span class="fill" style="width:${covered ? Math.round(score*100) : 0}%"></span></span>` +
+      `<span class="score">${covered ? score.toFixed(2) : "—"}</span>`;
+    leaves.appendChild(div);
+  });
+
+  const blind = document.getElementById("blind");
+  const recovered = v.blind_spot_recovery || [];
+  if (!recovered.length){
+    blind.innerHTML = `<div class="muted" style="margin-top:8px;">No blind spots — every scoped org had local data.</div>`;
+  } else {
+    blind.innerHTML = recovered.map(leaf => {
+      const n = (v.blind_spot_incidents || {})[leaf] || 0;
+      return `<div class="recovery"><strong>${esc(leaf)}</strong> — a scoped org had
+        <em>no local data</em> here; the federation's shared coverage caught it.
+        <span class="pill">${n} pooled incident${n===1?"":"s"} now searchable by every org</span></div>`;
+    }).join("");
+  }
+}
+
+loadCampaigns();
+</script>
+</body>
+</html>
