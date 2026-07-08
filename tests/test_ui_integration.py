@@ -769,3 +769,25 @@ def test_redteam_rule_margin_returns_attempts():
 def test_redteam_rule_margin_requires_sml():
     client = _make_ui_client()
     assert client.post("/redteam/rule-margin", json={"sml_rules_text": ""}).status_code == 400
+
+
+# ── Restyled Classify page (design POC) ───────────────────────────────────────
+
+def test_classify_page_served():
+    client = _make_ui_client()
+    r = client.get("/classify")
+    assert r.status_code == 200
+    assert "Classification Result" in r.text
+    assert "runClassify" in r.text
+    # category selector is wired to the real PolicyCategory taxonomy
+    assert "illicit_activities" in r.text and "pii_ip" in r.text
+
+
+def test_policy_page_served():
+    client = _make_ui_client()
+    r = client.get("/policy")
+    assert r.status_code == 200
+    assert "Rule Creator" in r.text
+    assert "/osprey/rules/" in r.text          # wired to the real endpoint
+    assert "Vertical Rule Packs" not in r.text  # packs intentionally omitted
+    assert "Quick-Start" not in r.text          # DAO quick-start intentionally omitted

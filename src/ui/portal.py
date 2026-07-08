@@ -37,6 +37,8 @@ SHEILA_HTML = (_HERE / "sheila.html").read_text()
 ZK_TRAIL_HTML = (_HERE / "zk_trail.html").read_text()
 DPO_HTML = (_HERE / "dpo.html").read_text()
 REDTEAM_HTML = (_HERE / "redteam.html").read_text()
+CLASSIFY_HTML = (_HERE / "classify.html").read_text()
+POLICY_HTML = (_HERE / "policy.html").read_text()
 
 TEST_MODE = os.environ.get("SARA_TEST_MODE", "").lower() == "true"
 ADMIN_KEY = os.environ.get("SARA_ADMIN_KEY", "")
@@ -104,6 +106,8 @@ class UIPortal:
             Route("/admin/bounty/{bounty_id}/topup", self._admin_topup, methods=["POST"]),
             Route("/admin/submission/{submission_id}/requeue", self._admin_requeue, methods=["POST"]),
             # ── Sara-in-a-Box ──────────────────────────────────────────────
+            Route("/classify", self._classify_page, methods=["GET"]),
+            Route("/policy", self._policy_page, methods=["GET"]),
             Route("/sarabox", self._sarabox_page, methods=["GET"]),
             Route("/sarabox/skillfile", self._sarabox_save_skillfile, methods=["POST"]),
             Route("/sarabox/skillfile/{org_id}", self._sarabox_load_skillfile, methods=["GET"]),
@@ -261,6 +265,12 @@ class UIPortal:
         return JSONResponse({"status": "requeued", "submission_id": submission_id})
 
     # ── Sara-in-a-Box ──────────────────────────────────────────────────────────
+
+    async def _classify_page(self, request: Request) -> Response:
+        return HTMLResponse(CLASSIFY_HTML)
+
+    async def _policy_page(self, request: Request) -> Response:
+        return HTMLResponse(POLICY_HTML)
 
     async def _sarabox_page(self, request: Request) -> Response:
         return HTMLResponse(SARABOX_HTML)
