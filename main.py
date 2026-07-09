@@ -626,5 +626,21 @@ def sarabox(host: str, port: int):
     uvicorn.run(app, host=host, port=port)
 
 
+@cli.command(name="sheila-a2a")
+@click.option("--host", default="0.0.0.0")
+@click.option("--port", default=8100, type=int)
+def sheila_a2a(host: str, port: int):
+    """Run the Sheila A2A service (remote judge + red-team endpoint).
+
+    Point the arena at it with SHEILA_A2A_URL=http://<host>:<port>.
+    """
+    import uvicorn
+    from agents.sheila.a2a_server import create_app
+
+    app = create_app()
+    logger.info("Sheila A2A service on %s:%d (card at /.well-known/agent-card.json)", host, port)
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     cli()
