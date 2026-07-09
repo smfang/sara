@@ -104,6 +104,26 @@ class AttestationSigner:
         except Exception:
             return False
 
+    def sign_bytes(self, payload: bytes) -> str:
+        """Sign arbitrary bytes with the same ECDSA P-384 key (hex signature).
+
+        Used to sign the Sheila Agent Card (A2A Slice 2) so identity and
+        attestations share one key.
+        """
+        return self._private_key.sign(payload, ec.ECDSA(hashes.SHA384())).hex()
+
+    def verify_bytes(self, payload: bytes, signature_hex: str) -> bool:
+        """Verify a hex signature over arbitrary bytes against this key."""
+        if not signature_hex:
+            return False
+        try:
+            self._public_key.verify(
+                bytes.fromhex(signature_hex), payload, ec.ECDSA(hashes.SHA384())
+            )
+            return True
+        except Exception:
+            return False
+
     def _canonical_payload(self, a: EvaluationAttestation) -> str:
         """Deterministic string representation for signing."""
         return (
