@@ -130,6 +130,9 @@ def create_app(base_url: str | None = None) -> Starlette:
     # ── A2A task lifecycle (Slice 3) — one evaluation = one task ──────────────
     from agents.sheila.a2a_tasks import TaskStore, process_task, VALID_KINDS
     store = TaskStore()
+    # Hold strong refs to in-flight background tasks so the event loop can't GC
+    # them mid-run (asyncio.create_task keeps only a weak ref otherwise).
+    bg_tasks: set = set()
 
     _REQUIRED = {
         "judge": ("turn_id", "user_input", "agent_response"),
@@ -156,7 +159,11 @@ def create_app(base_url: str | None = None) -> Starlette:
             task_input.setdefault("n_probes", 50)
 
         task = store.create(kind, task_input)
-        asyncio.create_task(process_task(store, task.task_id, _judge_backend, _redteam_backend))
+        bg = asyncio.create_task(
+            process_task(store, task.task_id, _judge_backend, _redteam_backend)
+        )
+        bg_tasks.add(bg)
+        bg.add_done_callback(bg_tasks.discard)
         return JSONResponse({"task_id": task.task_id, "state": task.state}, status_code=202)
 
     async def _get_task(request: Request) -> Response:
