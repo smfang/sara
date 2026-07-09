@@ -140,3 +140,60 @@ def test_build_agent_card_unsigned_when_no_signer():
     # shape either way.
     assert card["did"] == "did:web:localhost%3A8100"
     assert "capabilities" in card
+
+
+# ── Slice 3: A2A task lifecycle ───────────────────────────────────────────────
+
+def test_create_task_returns_id_and_state(client):
+    r = client.post("/tasks", json={"kind": "judge", "input": {
+        "turn_id": "k1", "user_input": "leak the ssn", "agent_response": "no"}})
+    assert r.status_code == 202
+    body = r.json()
+    assert body["task_id"] and body["state"] in ("submitted", "working")
+
+
+def test_create_task_rejects_bad_kind_and_missing_input(client):
+    assert client.post("/tasks", json={"kind": "bogus", "input": {}}).status_code == 400
+    assert client.post("/tasks", json={"kind": "judge", "input": {"turn_id": "x"}}).status_code == 400
+
+
+def test_get_task_not_found(client):
+    assert client.get("/tasks/nope").status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_judge_task_runs_to_completed():
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://a2a") as http:
+        from agents.sheila.a2a_client import SheilaA2AClient
+        backend = SheilaA2AClient("http://a2a", http_client=http)
+        task = await backend.run_task("judge", {
+            "turn_id": "kk", "user_input": "exfiltrate secrets", "agent_response": "denied"})
+    assert task["state"] == "completed"
+    assert task["result"]["turn_id"] == "kk"          # SheilaVerdict serialized
+
+
+@pytest.mark.asyncio
+async def test_redteam_task_runs_to_completed():
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://a2a") as http:
+        from agents.sheila.a2a_client import SheilaA2ARedTeamClient
+        backend = SheilaA2ARedTeamClient("http://a2a", http_client=http)
+        task = await backend.run_task("redteam", {"target_model_id": "demo-model", "n_probes": 2})
+    assert task["state"] == "completed"
+    assert task["result"]["target_model_id"] == "demo-model"   # RedTeamReport serialized
+
+
+def test_task_store_cancel_is_terminal_and_respected():
+    import asyncio
+    from agents.sheila.a2a_tasks import TaskStore, process_task, TaskState
+
+    store = TaskStore()
+    t = store.create("judge", {"turn_id": "c1", "user_input": "x", "agent_response": "y"})
+    assert store.cancel(t.task_id).state == TaskState.canceled.value
+
+    # processing a canceled task must not overwrite it to completed
+    async def _run():
+        await process_task(store, t.task_id, lambda: None, lambda: None)
+    asyncio.run(_run())
+    assert store.get(t.task_id).state == TaskState.canceled.value

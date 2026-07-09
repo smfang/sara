@@ -1,16 +1,19 @@
 """
 Sheila A2A (Agent-to-Agent) HTTP client.
 
-These classes implement the same interface as SheilaJudgeLocal and
-SheilaRedTeamLocal but dispatch over HTTP to a remote Sheila service
-(`agents/sheila/a2a_server.py`, typically running in a TEE enclave in Phase 5).
+Implements the same interface as SheilaJudgeLocal / SheilaRedTeamLocal but
+dispatches over HTTP to a remote Sheila service (`agents/sheila/a2a_server.py`).
 
 When SHEILA_A2A_URL is set, SheilaJudge / SheilaRedTeam (agents/sheila/api.py)
-use these backends instead of the local implementations — zero changes to call
-sites. The interface is identical, so Sara never knows whether Sheila is local
-or remote.
+use these backends instead of the local ones — zero changes to call sites, so
+Sara never knows whether Sheila is local or remote.
+
+Two call styles:
+  - synchronous:  .judge(...) / .run_session(...)  (Slice 1)
+  - task-based:   .submit_task / .get_task / .cancel_task / .run_task  (Slice 3)
 """
 
+import asyncio
 from typing import List, Literal, Optional
 
 import httpx
@@ -18,8 +21,8 @@ import httpx
 _TIMEOUT = 300.0
 
 
-class SheilaA2AClient:
-    """HTTP A2A backend for SheilaJudge — POSTs judge() calls to the enclave.
+class _A2ABase:
+    """Shared HTTP dispatch + A2A task lifecycle helpers.
 
     `http_client` may be injected (tests / connection reuse); when omitted a
     short-lived AsyncClient is created and closed per call.
@@ -28,6 +31,56 @@ class SheilaA2AClient:
     def __init__(self, a2a_url: str, http_client: Optional[httpx.AsyncClient] = None):
         self._url = a2a_url.rstrip("/")
         self._http = http_client
+
+    async def _post(self, path: str, payload: dict) -> dict:
+        if self._http is not None:
+            resp = await self._http.post(f"{self._url}{path}", json=payload, timeout=_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(f"{self._url}{path}", json=payload)
+            resp.raise_for_status()
+            return resp.json()
+
+    async def _get(self, path: str) -> dict:
+        if self._http is not None:
+            resp = await self._http.get(f"{self._url}{path}", timeout=_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.get(f"{self._url}{path}")
+            resp.raise_for_status()
+            return resp.json()
+
+    # ── A2A task lifecycle (Slice 3) ─────────────────────────────────────────
+    async def submit_task(self, kind: str, task_input: dict) -> str:
+        """Create a task (one evaluation = one task); returns its task_id."""
+        data = await self._post("/tasks", {"kind": kind, "input": task_input})
+        return data["task_id"]
+
+    async def get_task(self, task_id: str) -> dict:
+        return await self._get(f"/tasks/{task_id}")
+
+    async def cancel_task(self, task_id: str) -> dict:
+        return await self._post(f"/tasks/{task_id}/cancel", {})
+
+    async def run_task(self, kind: str, task_input: dict,
+                       poll_interval: float = 0.1, timeout: float = _TIMEOUT) -> dict:
+        """Submit a task and poll until a terminal state; returns the final task."""
+        task_id = await self.submit_task(kind, task_input)
+        waited = 0.0
+        while True:
+            task = await self.get_task(task_id)
+            if task["state"] in ("completed", "failed", "canceled"):
+                return task
+            if waited >= timeout:
+                return task
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+
+
+class SheilaA2AClient(_A2ABase):
+    """HTTP A2A backend for SheilaJudge — POSTs judge() calls to the enclave."""
 
     async def judge(
         self,
@@ -52,23 +105,9 @@ class SheilaA2AClient:
         from agents.sheila.api import SheilaVerdict
         return SheilaVerdict(**data)
 
-    async def _post(self, path: str, payload: dict) -> dict:
-        if self._http is not None:
-            resp = await self._http.post(f"{self._url}{path}", json=payload, timeout=_TIMEOUT)
-            resp.raise_for_status()
-            return resp.json()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(f"{self._url}{path}", json=payload)
-            resp.raise_for_status()
-            return resp.json()
 
-
-class SheilaA2ARedTeamClient:
+class SheilaA2ARedTeamClient(_A2ABase):
     """HTTP A2A backend for SheilaRedTeam — POSTs run_session() to the enclave."""
-
-    def __init__(self, a2a_url: str, http_client: Optional[httpx.AsyncClient] = None):
-        self._url = a2a_url.rstrip("/")
-        self._http = http_client
 
     async def run_session(
         self,
@@ -87,13 +126,3 @@ class SheilaA2ARedTeamClient:
         data = await self._post("/redteam/session", payload)
         from agents.sheila.api import RedTeamReport
         return RedTeamReport(**data)
-
-    async def _post(self, path: str, payload: dict) -> dict:
-        if self._http is not None:
-            resp = await self._http.post(f"{self._url}{path}", json=payload, timeout=_TIMEOUT)
-            resp.raise_for_status()
-            return resp.json()
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            resp = await client.post(f"{self._url}{path}", json=payload)
-            resp.raise_for_status()
-            return resp.json()

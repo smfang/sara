@@ -16,6 +16,7 @@ Point at it:  SHEILA_A2A_URL=http://localhost:8100 uv run main.py arena
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from dataclasses import asdict
@@ -126,10 +127,57 @@ def create_app(base_url: str | None = None) -> Starlette:
     async def _did_json(request: Request) -> Response:
         return JSONResponse(did_doc)
 
+    # ── A2A task lifecycle (Slice 3) — one evaluation = one task ──────────────
+    from agents.sheila.a2a_tasks import TaskStore, process_task, VALID_KINDS
+    store = TaskStore()
+
+    _REQUIRED = {
+        "judge": ("turn_id", "user_input", "agent_response"),
+        "redteam": ("target_model_id",),
+    }
+
+    async def _create_task(request: Request) -> Response:
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid JSON"}, status_code=400)
+        kind = body.get("kind")
+        task_input = body.get("input") or {}
+        if kind not in VALID_KINDS:
+            return JSONResponse({"error": f"kind must be one of {sorted(VALID_KINDS)}"}, status_code=400)
+        missing = [f for f in _REQUIRED[kind] if not task_input.get(f) and task_input.get(f) != ""]
+        if missing:
+            return JSONResponse({"error": f"input missing required fields: {missing}"}, status_code=400)
+
+        # Normalise optional args the local backends require positionally, so the
+        # task path matches the synchronous endpoints' defaults.
+        if kind == "redteam":
+            task_input.setdefault("categories", [])
+            task_input.setdefault("n_probes", 50)
+
+        task = store.create(kind, task_input)
+        asyncio.create_task(process_task(store, task.task_id, _judge_backend, _redteam_backend))
+        return JSONResponse({"task_id": task.task_id, "state": task.state}, status_code=202)
+
+    async def _get_task(request: Request) -> Response:
+        task = store.get(request.path_params["task_id"])
+        if task is None:
+            return JSONResponse({"error": "task not found"}, status_code=404)
+        return JSONResponse(task.to_dict())
+
+    async def _cancel_task(request: Request) -> Response:
+        task = store.cancel(request.path_params["task_id"])
+        if task is None:
+            return JSONResponse({"error": "task not found"}, status_code=404)
+        return JSONResponse({"task_id": task.task_id, "state": task.state})
+
     return Starlette(routes=[
         Route("/.well-known/agent-card.json", _agent_card, methods=["GET"]),
         Route("/.well-known/did.json", _did_json, methods=["GET"]),
         Route("/health", _health, methods=["GET"]),
         Route("/judge", _judge, methods=["POST"]),
         Route("/redteam/session", _redteam_session, methods=["POST"]),
+        Route("/tasks", _create_task, methods=["POST"]),
+        Route("/tasks/{task_id}", _get_task, methods=["GET"]),
+        Route("/tasks/{task_id}/cancel", _cancel_task, methods=["POST"]),
     ])
