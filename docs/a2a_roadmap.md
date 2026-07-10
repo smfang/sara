@@ -12,18 +12,13 @@ Sara never learns whether Sheila is local or remote.
 - **Slice 2 — Signed identity** ✅ (`agents/sheila/agent_card.py`).
   P-384-signed Agent Card at `/.well-known/agent-card.json` + `did:web` doc at
   `/.well-known/did.json`. `card → did:web → ERC-8004` (stub) + x402 seam.
-
-## Outstanding — core slices
-### Slice 3 — A2A task lifecycle
-- State machine: `submitted → working → input-required → completed → failed` (+ `canceled`).
-- One evaluation = one task. `POST /tasks` returns `task_id`; `GET /tasks/{id}` polls; `POST /tasks/{id}/cancel`.
-- In-memory task store (ClickHouse `# A.5-full`); each task bound to its signed attestation.
-- Client: submit + poll, keeping the `.judge()`/`.run_session()` surface unchanged.
-
-### Slice 4 — Turn protocol (multi-turn Sheila)
-- `max_turns` cap + a referee that adjudicates each turn and stops the session.
-- Turn loop: attacker → target response → judge/referee verdict → continue/stop.
-- Per-task transcript; final verdict is the signed attestation. Depends on Slice 3.
+- **Slice 3 — Task lifecycle** ✅ (`agents/sheila/a2a_tasks.py`).
+  `submitted → working → completed/failed/canceled`; one eval = one task;
+  `POST /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}/cancel`; submit+poll client.
+- **Slice 4 — Turn protocol** ✅ (`agents/sheila/a2a_turns.py`).
+  Multi-turn sessions with `max_turns` + a referee (stops on bypass / at cap).
+  Two modes: `input-required` (caller drives the target via `POST /tasks/{id}/input`)
+  and `simulated`. Signed transcript (same P-384 key). Client `run_turn_session`.
 
 ## Outstanding — stub completions (`# A.5-full:` markers in done slices)
 - Real ERC-8004 registration → fill `card.erc8004.tx_hash` (reuse `src/crypto/attesting_agent.py`).

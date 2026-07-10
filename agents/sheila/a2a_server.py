@@ -128,11 +128,21 @@ def create_app(base_url: str | None = None) -> Starlette:
         return JSONResponse(did_doc)
 
     # ── A2A task lifecycle (Slice 3) — one evaluation = one task ──────────────
-    from agents.sheila.a2a_tasks import TaskStore, process_task, VALID_KINDS
+    from agents.sheila.a2a_tasks import TaskStore, TaskState, process_task, VALID_KINDS
+    from agents.sheila.a2a_turns import SessionConfig, TurnEngine, run_simulated
     store = TaskStore()
     # Hold strong refs to in-flight background tasks so the event loop can't GC
     # them mid-run (asyncio.create_task keeps only a weak ref otherwise).
     bg_tasks: set = set()
+    # Live turn-session engines (Slice 4), keyed by task_id — in-process state
+    # for the resumable input-required loop.
+    sessions: dict = {}
+
+    def _session_result(engine) -> dict:
+        """Serializable session view: the transcript + the prompt awaiting input."""
+        result = engine.transcript.to_dict()
+        result["pending_prompt"] = engine.pending_prompt
+        return result
 
     _REQUIRED = {
         "judge": ("turn_id", "user_input", "agent_response"),
@@ -146,6 +156,40 @@ def create_app(base_url: str | None = None) -> Starlette:
             return JSONResponse({"error": "invalid JSON"}, status_code=400)
         kind = body.get("kind")
         task_input = body.get("input") or {}
+
+        # ── Slice 4: multi-turn red-team session ──────────────────────────────
+        if kind == "turn_session":
+            if not task_input.get("target_model_id"):
+                return JSONResponse({"error": "input.target_model_id is required"}, status_code=400)
+            config = SessionConfig(
+                target_model_id=task_input["target_model_id"],
+                categories=task_input.get("categories") or [],
+                max_turns=int(task_input.get("max_turns", 6)),
+                mode=task_input.get("mode", "input-required"),
+                stop_on_bypass=bool(task_input.get("stop_on_bypass", True)),
+            )
+            engine = TurnEngine(config, _judge_backend, _redteam_backend, signer=signer)
+            task = store.create(kind, task_input)
+            sessions[task.task_id] = engine
+
+            if config.mode == "simulated":
+                async def _run_sim(tid=task.task_id, eng=engine):
+                    store.update(tid, state=TaskState.working.value)
+                    await run_simulated(eng)
+                    store.update(tid, state=TaskState.completed.value, result=_session_result(eng))
+                bg = asyncio.create_task(_run_sim())
+                bg_tasks.add(bg); bg.add_done_callback(bg_tasks.discard)
+                return JSONResponse({"task_id": task.task_id, "state": TaskState.working.value}, status_code=202)
+
+            # input-required: emit the first attacker prompt and pause
+            await engine.open_turn()
+            store.update(task.task_id, state=TaskState.input_required.value, result=_session_result(engine))
+            return JSONResponse({
+                "task_id": task.task_id,
+                "state": TaskState.input_required.value,
+                "pending_prompt": engine.pending_prompt,
+            }, status_code=202)
+
         if kind not in VALID_KINDS:
             return JSONResponse({"error": f"kind must be one of {sorted(VALID_KINDS)}"}, status_code=400)
         missing = [f for f in _REQUIRED[kind] if not task_input.get(f) and task_input.get(f) != ""]
@@ -178,6 +222,34 @@ def create_app(base_url: str | None = None) -> Starlette:
             return JSONResponse({"error": "task not found"}, status_code=404)
         return JSONResponse({"task_id": task.task_id, "state": task.state})
 
+    async def _task_input(request: Request) -> Response:
+        """Supply the target's response for a turn session's pending turn (Slice 4)."""
+        task_id = request.path_params["task_id"]
+        task = store.get(task_id)
+        if task is None:
+            return JSONResponse({"error": "task not found"}, status_code=404)
+        if task.state != TaskState.input_required.value:
+            return JSONResponse(
+                {"error": f"task not awaiting input (state={task.state})"}, status_code=409)
+        engine = sessions.get(task_id)
+        if engine is None:
+            return JSONResponse({"error": "session state lost"}, status_code=410)
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "invalid JSON"}, status_code=400)
+        target_response = body.get("target_response")
+        if target_response is None:
+            return JSONResponse({"error": "target_response is required"}, status_code=400)
+
+        await engine.close_turn(target_response)
+        if not engine.done:
+            await engine.open_turn()
+        new_state = TaskState.completed.value if engine.done else TaskState.input_required.value
+        store.update(task_id, state=new_state, result=_session_result(engine))
+        return JSONResponse({"task_id": task_id, "state": new_state,
+                             "pending_prompt": engine.pending_prompt})
+
     return Starlette(routes=[
         Route("/.well-known/agent-card.json", _agent_card, methods=["GET"]),
         Route("/.well-known/did.json", _did_json, methods=["GET"]),
@@ -187,4 +259,5 @@ def create_app(base_url: str | None = None) -> Starlette:
         Route("/tasks", _create_task, methods=["POST"]),
         Route("/tasks/{task_id}", _get_task, methods=["GET"]),
         Route("/tasks/{task_id}/cancel", _cancel_task, methods=["POST"]),
+        Route("/tasks/{task_id}/input", _task_input, methods=["POST"]),
     ])

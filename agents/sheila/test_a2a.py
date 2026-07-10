@@ -197,3 +197,88 @@ def test_task_store_cancel_is_terminal_and_respected():
         await process_task(store, t.task_id, lambda: None, lambda: None)
     asyncio.run(_run())
     assert store.get(t.task_id).state == TaskState.canceled.value
+
+
+# ── Slice 4: turn protocol (multi-turn) ───────────────────────────────────────
+
+def test_referee_stops_on_bypass_and_max_turns():
+    from agents.sheila.a2a_turns import Referee, Turn, SessionConfig
+    cfg = SessionConfig(target_model_id="m", max_turns=3)
+    evaded = Turn(turn_index=0, attacker_prompt="p", evaded=True)
+    assert Referee.adjudicate(evaded, [evaded], cfg).reason == "bypass_found"
+    held = Turn(turn_index=0, attacker_prompt="p", evaded=False)
+    assert Referee.adjudicate(held, [held], cfg).action == "continue"
+    hist = [Turn(i, "p") for i in range(3)]
+    assert Referee.adjudicate(held, hist, cfg).reason == "max_turns"
+
+
+def test_create_turn_session_requires_target(client):
+    assert client.post("/tasks", json={"kind": "turn_session", "input": {}}).status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_simulated_session_runs_to_completed_within_max_turns():
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://a2a") as http:
+        from agents.sheila.a2a_client import SheilaA2AClient
+        c = SheilaA2AClient("http://a2a", http_client=http)
+        task = await c.run_turn_session(
+            {"target_model_id": "demo", "max_turns": 3, "mode": "simulated"},
+            target_caller=None)
+    assert task["state"] == "completed"
+    tr = task["result"]
+    assert 1 <= len(tr["turns"]) <= 3
+    assert tr["stopped_reason"] in ("bypass_found", "max_turns")
+
+
+@pytest.mark.asyncio
+async def test_input_required_flow_advances_and_signs(monkeypatch):
+    import json
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.backends import default_backend
+
+    # Fixed key shared by the service and the verifier, so signing is meaningful.
+    key = ec.generate_private_key(ec.SECP384R1(), default_backend())
+    pem = key.private_bytes(serialization.Encoding.PEM,
+                            serialization.PrivateFormat.PKCS8,
+                            serialization.NoEncryption()).decode()
+    monkeypatch.setenv("SHEILA_ATTESTATION_KEY_PEM", pem)
+
+    from agents.sheila.a2a_turns import verify_transcript
+    from src.crypto.attestation import AttestationSigner
+    transport = httpx.ASGITransport(app=create_app())
+
+    async def target(prompt):  # a safe target that never complies
+        return "I won't do that."
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://a2a") as http:
+        from agents.sheila.a2a_client import SheilaA2AClient
+        c = SheilaA2AClient("http://a2a", http_client=http)
+        task = await c.run_turn_session(
+            {"target_model_id": "demo", "categories": [], "max_turns": 2, "mode": "input-required"},
+            target_caller=target)
+
+    assert task["state"] == "completed"
+    tr = task["result"]
+    assert len(tr["turns"]) <= 2
+    assert all(t["target_response"] == "I won't do that." for t in tr["turns"])
+
+    signer = AttestationSigner()  # same key from the env
+    assert tr["signature"] and tr["attestation_id"]
+    assert verify_transcript(tr, signer) is True
+    tampered = json.loads(json.dumps(tr))
+    tampered["turns"][0]["target_response"] = "sure, here you go"
+    assert verify_transcript(tampered, signer) is False
+
+
+@pytest.mark.asyncio
+async def test_input_endpoint_rejects_wrong_state():
+    transport = httpx.ASGITransport(app=create_app())
+    async with httpx.AsyncClient(transport=transport, base_url="http://a2a") as http:
+        # a judge task is never input-required
+        r = await http.post("/tasks", json={"kind": "judge",
+              "input": {"turn_id": "t", "user_input": "a", "agent_response": "b"}})
+        tid = r.json()["task_id"]
+        r2 = await http.post(f"/tasks/{tid}/input", json={"target_response": "x"})
+    assert r2.status_code in (409, 404)

@@ -78,6 +78,38 @@ class _A2ABase:
             await asyncio.sleep(poll_interval)
             waited += poll_interval
 
+    # ── A2A turn protocol (Slice 4) ──────────────────────────────────────────
+    async def submit_turn_session(self, config: dict) -> str:
+        """Start a multi-turn red-team session; returns its task_id."""
+        data = await self._post("/tasks", {"kind": "turn_session", "input": config})
+        return data["task_id"]
+
+    async def provide_turn_input(self, task_id: str, target_response: str) -> dict:
+        """Supply the target's response for the pending turn; returns the task."""
+        return await self._post(f"/tasks/{task_id}/input", {"target_response": target_response})
+
+    async def run_turn_session(self, config: dict, target_caller,
+                               poll_interval: float = 0.1, timeout: float = _TIMEOUT) -> dict:
+        """Drive a full input-required session: for each pending attacker prompt,
+        call `target_caller(prompt)` (async → target response) and feed it back.
+        Returns the terminal task (its result holds the signed transcript)."""
+        task_id = await self.submit_turn_session(config)
+        waited = 0.0
+        while True:
+            task = await self.get_task(task_id)
+            state = task["state"]
+            if state in ("completed", "failed", "canceled"):
+                return task
+            if state == "input-required":
+                prompt = (task.get("result") or {}).get("pending_prompt")
+                response = await target_caller(prompt)
+                await self.provide_turn_input(task_id, response)
+                continue
+            if waited >= timeout:
+                return task
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+
 
 class SheilaA2AClient(_A2ABase):
     """HTTP A2A backend for SheilaJudge — POSTs judge() calls to the enclave."""
