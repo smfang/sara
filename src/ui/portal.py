@@ -39,6 +39,8 @@ DPO_HTML = (_HERE / "dpo.html").read_text()
 REDTEAM_HTML = (_HERE / "redteam.html").read_text()
 CLASSIFY_HTML = (_HERE / "classify.html").read_text()
 POLICY_HTML = (_HERE / "policy.html").read_text()
+VIOLATIONS_HTML = (_HERE / "violations.html").read_text()
+OVERVIEW_HTML = (_HERE / "overview.html").read_text()
 
 TEST_MODE = os.environ.get("SARA_TEST_MODE", "").lower() == "true"
 ADMIN_KEY = os.environ.get("SARA_ADMIN_KEY", "")
@@ -108,6 +110,9 @@ class UIPortal:
             # ── Sara-in-a-Box ──────────────────────────────────────────────
             Route("/classify", self._classify_page, methods=["GET"]),
             Route("/policy", self._policy_page, methods=["GET"]),
+            Route("/violations", self._violations_page, methods=["GET"]),
+            Route("/overview", self._overview_page, methods=["GET"]),
+            Route("/agent/sheila-card", self._sheila_card, methods=["GET"]),
             Route("/sarabox", self._sarabox_page, methods=["GET"]),
             Route("/sarabox/skillfile", self._sarabox_save_skillfile, methods=["POST"]),
             Route("/sarabox/skillfile/{org_id}", self._sarabox_load_skillfile, methods=["GET"]),
@@ -271,6 +276,23 @@ class UIPortal:
 
     async def _policy_page(self, request: Request) -> Response:
         return HTMLResponse(POLICY_HTML)
+
+    async def _violations_page(self, request: Request) -> Response:
+        return HTMLResponse(VIOLATIONS_HTML)
+
+    async def _overview_page(self, request: Request) -> Response:
+        return HTMLResponse(OVERVIEW_HTML)
+
+    async def _sheila_card(self, request: Request) -> Response:
+        """Serve Sheila's signed A2A Agent Card so the console reflects the A2A
+        identity (the card is public by design). Base URL is the A2A service URL."""
+        try:
+            from agents.sheila.agent_card import build_agent_card
+            base = (os.getenv("SHEILA_A2A_PUBLIC_URL")
+                    or os.getenv("SHEILA_A2A_URL") or "http://localhost:8100")
+            return JSONResponse(build_agent_card(base))
+        except Exception as exc:
+            return JSONResponse({"error": f"agent card unavailable: {exc}"}, status_code=503)
 
     async def _sarabox_page(self, request: Request) -> Response:
         return HTMLResponse(SARABOX_HTML)

@@ -791,3 +791,23 @@ def test_policy_page_served():
     assert "/osprey/rules/" in r.text          # wired to the real endpoint
     assert "Vertical Rule Packs" not in r.text  # packs intentionally omitted
     assert "Quick-Start" not in r.text          # DAO quick-start intentionally omitted
+
+
+def test_overview_and_violations_pages_served():
+    client = _make_ui_client()
+    for path, marker in [("/overview", "Recent activity"),
+                         ("/violations", "Live verdicts")]:
+        r = client.get(path)
+        assert r.status_code == 200, path
+        assert marker in r.text
+
+
+def test_sheila_agent_card_endpoint():
+    client = _make_ui_client()
+    r = client.get("/agent/sheila-card")
+    assert r.status_code == 200
+    card = r.json()
+    assert card["name"] == "sheila"
+    # reflects the full A2A surface (Slices 1-4)
+    for cap in ("judge", "redteam", "tasks", "turns"):
+        assert cap in card["capabilities"]

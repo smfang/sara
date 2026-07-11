@@ -27,11 +27,18 @@ try:
 except Exception:  # pragma: no cover
     CRYPTO_AVAILABLE = False
 
-CAPABILITIES = ["judge", "redteam"]
-ENDPOINTS = {"judge": "/judge", "redteam": "/redteam/session"}
+CAPABILITIES = ["judge", "redteam", "tasks", "turns"]
+ENDPOINTS = {
+    "judge": "/judge",
+    "redteam": "/redteam/session",
+    "tasks": "/tasks",                       # async task lifecycle (Slice 3)
+    "turns": "/tasks {kind=turn_session}",   # multi-turn sessions (Slice 4)
+}
 SKILLS = [
     {"id": "judge", "description": "Evaluate an agent interaction, return a verdict + category."},
     {"id": "redteam", "description": "Run adversarial probes against a target model."},
+    {"id": "tasks", "description": "Async task lifecycle: submit/poll/cancel one evaluation = one task."},
+    {"id": "turns", "description": "Multi-turn red-team session with max_turns + referee; signed transcript."},
 ]
 
 
