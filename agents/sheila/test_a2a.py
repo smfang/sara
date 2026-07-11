@@ -282,3 +282,10 @@ async def test_input_endpoint_rejects_wrong_state():
         tid = r.json()["task_id"]
         r2 = await http.post(f"/tasks/{tid}/input", json={"target_response": "x"})
     assert r2.status_code in (409, 404)
+
+
+def test_turn_session_rejects_nonpositive_max_turns(client):
+    for mt in (0, -3, "abc"):
+        r = client.post("/tasks", json={"kind": "turn_session",
+              "input": {"target_model_id": "demo", "max_turns": mt}})
+        assert r.status_code == 400, mt

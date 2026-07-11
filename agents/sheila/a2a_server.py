@@ -135,8 +135,11 @@ def create_app(base_url: str | None = None) -> Starlette:
     # them mid-run (asyncio.create_task keeps only a weak ref otherwise).
     bg_tasks: set = set()
     # Live turn-session engines (Slice 4), keyed by task_id — in-process state
-    # for the resumable input-required loop.
+    # for the resumable input-required loop. `session_locks` serialises the
+    # check-state → close_turn → open_turn → update sequence so concurrent
+    # /input calls for the same task can't corrupt the (signed) transcript.
     sessions: dict = {}
+    session_locks: dict = {}
 
     def _session_result(engine) -> dict:
         """Serializable session view: the transcript + the prompt awaiting input."""
@@ -161,14 +164,23 @@ def create_app(base_url: str | None = None) -> Starlette:
         if kind == "turn_session":
             if not task_input.get("target_model_id"):
                 return JSONResponse({"error": "input.target_model_id is required"}, status_code=400)
+            try:
+                max_turns = int(task_input.get("max_turns", 6))
+            except (TypeError, ValueError):
+                max_turns = 0
+            if max_turns < 1:
+                return JSONResponse({"error": "max_turns must be >= 1"}, status_code=400)
             config = SessionConfig(
                 target_model_id=task_input["target_model_id"],
                 categories=task_input.get("categories") or [],
-                max_turns=int(task_input.get("max_turns", 6)),
+                max_turns=max_turns,
                 mode=task_input.get("mode", "input-required"),
                 stop_on_bypass=bool(task_input.get("stop_on_bypass", True)),
             )
-            engine = TurnEngine(config, _judge_backend, _redteam_backend, signer=signer)
+            try:
+                engine = TurnEngine(config, _judge_backend, _redteam_backend, signer=signer)
+            except Exception as exc:
+                return JSONResponse({"error": f"could not start session: {exc}"}, status_code=500)
             task = store.create(kind, task_input)
             sessions[task.task_id] = engine
 
@@ -242,11 +254,20 @@ def create_app(base_url: str | None = None) -> Starlette:
         if target_response is None:
             return JSONResponse({"error": "target_response is required"}, status_code=400)
 
-        await engine.close_turn(target_response)
-        if not engine.done:
-            await engine.open_turn()
-        new_state = TaskState.completed.value if engine.done else TaskState.input_required.value
-        store.update(task_id, state=new_state, result=_session_result(engine))
+        # Serialise the whole advance so two concurrent /input calls for the same
+        # pending turn can't both close+open it (which would corrupt the transcript).
+        lock = session_locks.setdefault(task_id, asyncio.Lock())
+        async with lock:
+            task = store.get(task_id)
+            if task is None or task.state != TaskState.input_required.value:
+                return JSONResponse(
+                    {"error": f"task not awaiting input (state={task.state if task else 'gone'})"},
+                    status_code=409)
+            await engine.close_turn(target_response)
+            if not engine.done:
+                await engine.open_turn()
+            new_state = TaskState.completed.value if engine.done else TaskState.input_required.value
+            store.update(task_id, state=new_state, result=_session_result(engine))
         return JSONResponse({"task_id": task_id, "state": new_state,
                              "pending_prompt": engine.pending_prompt})
 

@@ -174,8 +174,13 @@ async function evaluate(){
       body: JSON.stringify({org_id: ORG, prompt})
     });
     const d = await r.json();
-    if(!r.ok){ msg.textContent = "Evaluate failed: " + (d.error || r.status); return; }
-    const ev = d.event || d;              // STOP path wraps in {blocked, event}
+    // A STOP block is returned as HTTP 403 {stopped:true, event:{...}} — that is a
+    // legitimate verdict to display, NOT a request failure. Only treat other
+    // non-2xx responses (400/500/etc.) as errors.
+    if(!r.ok && !(r.status === 403 && d.event)){
+      msg.textContent = "Evaluate failed: " + (d.error || r.status); return;
+    }
+    const ev = d.event || d;              // STOP path wraps the event in {stopped, event}
     const act = ev.action_taken || "LOG";
     msg.innerHTML = `Verdict: <span class="badge ${actClass(act)}">${esc(act)}</span> ` +
       (ev.matched_rule_id? `· matched <strong>${esc(ev.matched_rule_id)}</strong>` : "· no rule matched") +

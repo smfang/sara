@@ -108,7 +108,10 @@ def verify_transcript(transcript: dict, signer) -> bool:
     sig = transcript.get("signature")
     if not sig:
         return False
-    return signer.verify_bytes(canonical_bytes(_transcript_core(transcript)), sig)
+    try:
+        return signer.verify_bytes(canonical_bytes(_transcript_core(transcript)), sig)
+    except (KeyError, TypeError, ValueError):
+        return False   # malformed/truncated transcript -> not verified
 
 
 def simulate_target(attacker_prompt: str) -> str:
@@ -164,6 +167,10 @@ class TurnEngine:
 
     async def close_turn(self, target_response: str) -> RefereeDecision:
         """Record the target response, judge it, and let the referee decide."""
+        # Defensive: never index an empty transcript (e.g. a degenerate config).
+        if not self.transcript.turns or self.transcript.turns[-1].target_response is not None:
+            self._finish("no_open_turn")
+            return RefereeDecision("stop", "no_open_turn")
         turn = self.transcript.turns[-1]
         turn.target_response = target_response
         verdict = await self._judge().judge(
