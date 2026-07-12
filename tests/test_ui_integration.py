@@ -811,3 +811,12 @@ def test_sheila_agent_card_endpoint():
     # reflects the full A2A surface (Slices 1-4)
     for cap in ("judge", "redteam", "tasks", "turns"):
         assert cap in card["capabilities"]
+
+
+def test_attack_runner_page_served():
+    client = _make_ui_client()
+    r = client.get("/attack")
+    assert r.status_code == 200
+    assert "Submit Attack" in r.text
+    assert "Active Bounties" in r.text
+    assert "/api/submit" in r.text and "/api/bounties" in r.text  # wired to real endpoints
