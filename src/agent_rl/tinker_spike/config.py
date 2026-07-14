@@ -36,6 +36,12 @@ class TinkerRLConfig:
     # (pc2 is minority weight; full sampling at 102k calls/run is infeasible)
     pc2_sample_rate: float = 0.10
 
+    # Reasoning-format reward shaping (GuardReasoner-Omni, arXiv 2602.03328).
+    # Not part of the weight-sum invariant: the format gate is a 0/1 multiplier
+    # and the conciseness penalty only applies to already-correct completions.
+    concise_target_tokens: int = 250   # L_target — reasoning length before any trim
+    concise_beta: float = 0.05         # β — max conciseness penalty (accuracy-conditioned)
+
     # Leaf IDs — single source of truth
     dao_leaves: list[str] = field(
         default_factory=lambda: [c["id"] for c in DAO_TAXONOMY]

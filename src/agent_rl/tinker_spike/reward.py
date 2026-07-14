@@ -13,6 +13,7 @@ pc2_sample_rate (default 10%) to avoid 100k+ LLM API calls per run.
 
 from __future__ import annotations
 
+import math
 import random
 from dataclasses import dataclass
 
@@ -35,6 +36,7 @@ class SaraCompletion:
     verdict: str        # "STOP" | "ALERT" | "ALLOW"
     predicted_gate: str # which Osprey gate Sara invoked
     rationale: str = ""
+    format_ok: bool = True  # 𝟙_fmt — did the sample emit a parseable <think>/<result>?
 
 
 class SheilaPC2Judge:
@@ -106,6 +108,12 @@ class RewardComputer:
     ) -> float:
         cfg = self._cfg
 
+        # Format gate 𝟙_fmt (GuardReasoner-Omni): a malformed reasoning/verdict
+        # earns zero — you cannot be rewarded for an unparseable answer. This is
+        # a stronger anchor than a soft term and reinforces verifiable dominance.
+        if not completion.format_ok:
+            return 0.0
+
         osprey_pass = self._gate_matcher.match(
             completion.predicted_gate, gold.expected_gate
         )
@@ -121,4 +129,13 @@ class RewardComputer:
             - cfg.w_fp      * false_positive
             + cfg.w_pc2     * pc2_score
         )
+
+        # Accuracy-conditioned conciseness penalty (paper eq. 4): only trim
+        # verbosity when the answer is ALREADY perfect, so hard cases keep
+        # deliberating and FP-control is never traded for brevity.
+        if osprey_pass == 1.0 and label_correct == 1.0 and cfg.concise_beta > 0:
+            n_tokens = len((completion.rationale or "").split())
+            over = max(0, n_tokens - cfg.concise_target_tokens) / max(1, cfg.concise_target_tokens)
+            raw -= cfg.concise_beta * math.tanh(over)
+
         return max(0.0, min(1.0, raw))
