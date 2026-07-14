@@ -149,6 +149,10 @@
           <div id="matched" style="margin-top:6px;">—</div>
           <div class="eyebrow" style="margin-top:14px;">Explanation</div>
           <div id="explain">—</div>
+          <div id="reasoning-wrap" style="display:none;">
+            <div class="eyebrow" style="margin-top:14px;">Reasoning <span class="muted" style="font-size:10px;">(auditable · attestable)</span></div>
+            <div id="reasoning" style="white-space:pre-wrap;color:var(--text2);margin-top:6px;font-size:12px;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -235,6 +239,9 @@ function render(d){
 
   document.getElementById("matched").innerHTML = matched ? esc(matched) : '<span class="muted">— none</span>';
   document.getElementById("explain").textContent = d.explanation || "—";
+  const reasoning = d.reasoning || "";
+  document.getElementById("reasoning-wrap").style.display = reasoning ? "block" : "none";
+  document.getElementById("reasoning").textContent = reasoning;
 }
 </script>
 </body>
