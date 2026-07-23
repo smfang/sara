@@ -143,6 +143,31 @@ def test_attestation_signer_verify_tampered():
     assert signer.verify(signed) is False
 
 
+@pytest.mark.parametrize("field, value", [
+    ("sheila_decision", "clean"),
+    ("sheila_category", "other_category"),
+    ("confidence", 0.01),
+    ("final_score", 999.0),
+    ("reward_alpha", 42.0),
+    ("reward_beta", 42.0),
+    ("reward_gamma", 42.0),
+    ("reward_delta", 42.0),
+    ("public_key_id", "attacker_key"),
+    ("bounty_id", "other_bounty"),
+    ("timestamp_ms", 1),
+])
+def test_attestation_signature_covers_all_fields(field, value):
+    """Every semantically meaningful field is inside the signed scope — tampering
+    any of them post-signature must fail verification (regression: reward_* and
+    public_key_id were previously unsigned)."""
+    from src.crypto.attestation import AttestationSigner
+    signer = AttestationSigner()
+    signed = signer.sign(make_test_attestation())
+    assert signer.verify(signed) is True
+    setattr(signed, field, value)
+    assert signer.verify(signed) is False, f"{field} is not covered by the signature"
+
+
 @pytest.mark.asyncio
 async def test_attesting_agent_returns_attestation_and_verdict():
     """AttestingAgent.evaluate_with_attestation() returns (attestation, verdict)."""

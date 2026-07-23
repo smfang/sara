@@ -642,5 +642,26 @@ def sheila_a2a(host: str, port: int):
     uvicorn.run(app, host=host, port=port)
 
 
+@cli.command(name="sara-a2a")
+@click.option("--host", default="0.0.0.0")
+@click.option("--port", default=8200, type=int)
+@click.option("--org-type", default="dao", help="Taxonomy to classify against (dao|defi|nft).")
+def sara_a2a(host: str, port: int, org_type: str):
+    """Run Sara as a conformant, interoperable A2A agent (threat classifier).
+
+    Any A2A client can discover the signed Agent Card at
+    /.well-known/agent-card.json and call the `classify` skill over JSON-RPC at
+    /a2a/v1. Runs standalone against a default taxonomy — no org provisioning.
+    """
+    import uvicorn
+    from src.sarabox.a2a import create_app
+
+    public_url = os.getenv("SARA_A2A_PUBLIC_URL") or f"http://{host}:{port}"
+    app = create_app(base_url=public_url, org_type=org_type)
+    logger.info("Sara A2A agent on %s:%d (org_type=%s, card at /.well-known/agent-card.json)",
+                host, port, org_type)
+    uvicorn.run(app, host=host, port=port)
+
+
 if __name__ == "__main__":
     cli()

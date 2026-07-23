@@ -19,6 +19,34 @@ Sara never learns whether Sheila is local or remote.
   Multi-turn sessions with `max_turns` + a referee (stops on bypass / at cap).
   Two modes: `input-required` (caller drives the target via `POST /tasks/{id}/input`)
   and `simulated`. Signed transcript (same P-384 key). Client `run_turn_session`.
+- **Slice 5 — Conformant A2A (third-party interop)** ✅ (`agents/sheila/a2a_conformant.py`).
+  Real A2A **v0.3.0** surface alongside the bespoke one — an off-the-shelf A2A
+  client interoperates with no Sheila SDK. Conformant Agent Card at
+  `/.well-known/agent-card.json` (object `capabilities`, `protocolVersion`,
+  `defaultInput/OutputModes`, `skills[]`, `preferredTransport=JSONRPC`), signed
+  with a detached **JWS ES384** verifiable from the embedded JWK by any JOSE lib.
+  **JSON-RPC 2.0** at `POST /a2a/v1`: `message/send` (Message/Part→Task+Artifact),
+  `tasks/get`, `tasks/cancel`, with standard A2A error codes. Reuses the Slice-3
+  `TaskStore`/`process_task`, so judge/redteam run the same backend. The bespoke
+  card moved to `/.well-known/agent-card.legacy.json`. Tests: `test_a2a_conformant.py`.
+  Not yet conformant: `message/stream` (SSE), `pushNotifications`, did:web key
+  resolution — advertised as unsupported (`capabilities.streaming=false`) and
+  returned as `UnsupportedOperationError`, not faked.
+- **Slice 6 — Sara as an A2A agent** ✅ (`src/sarabox/a2a.py`, CLI `sara-a2a`).
+  Sara (the classifier) is now a conformant A2A agent too, closing the roadmap's
+  "Sara as an A2A agent" item. Signed Agent Card advertising a `classify` skill;
+  JSON-RPC `message/send` maps a `Message` → `SaraBoxClassifier.classify()`,
+  returning the `ClassificationResult` as a Task Artifact; `tasks/get`/`tasks/cancel`.
+  Runs standalone against a default taxonomy (`uv run main.py sara-a2a`) — no org
+  provisioning / ClickHouse; org-scoped, credit-metered classification stays on
+  the bespoke `/sarabox/*` REST API. Tests: `tests/test_sara_a2a.py`.
+- **Shared protocol library** ✅ (`src/a2a/protocol.py`). The A2A *wire contract*
+  (JWS ES384 card signing/verify, JSON-RPC envelope + error codes, Task/Artifact
+  serialization, dispatcher) is now a NEUTRAL shared lib both agents import.
+  Respects the boundary invariant: Sara imports `src.a2a`, never `agents.sheila`
+  (asserted by `tests/test_sara_a2a.py::test_sara_a2a_does_not_import_sheila`).
+  Sheila's `a2a_conformant.py` was refactored onto it — single source of truth
+  for the crypto; all prior tests still green.
 
 ## Outstanding — stub completions (`# A.5-full:` markers in done slices)
 - Real ERC-8004 registration → fill `card.erc8004.tx_hash` (reuse `src/crypto/attesting_agent.py`).

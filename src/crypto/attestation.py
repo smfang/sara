@@ -125,11 +125,24 @@ class AttestationSigner:
             return False
 
     def _canonical_payload(self, a: EvaluationAttestation) -> str:
-        """Deterministic string representation for signing."""
+        """Deterministic string representation for signing.
+
+        Covers ALL semantically meaningful fields — including the reward-formula
+        inputs (α/β/γ/δ) and the signing key id — so none can be altered after
+        signing without invalidating the signature. Previously the reward inputs
+        and public_key_id were omitted, letting them be tampered post-signature.
+
+        The `v2` tag marks this scope: attestations signed under the older format
+        (which excluded reward_* and public_key_id) will no longer verify. Since
+        §7.3 persistence is still pre-production, no migration path is provided;
+        re-sign any retained records if that changes.
+        """
         return (
-            f"{a.attestation_id}|{a.commitment_id}|{a.bounty_id}|"
+            f"v2|{a.attestation_id}|{a.commitment_id}|{a.bounty_id}|"
             f"{a.sheila_decision}|{a.sheila_category}|{a.confidence:.6f}|"
-            f"{a.final_score:.6f}|{a.timestamp_ms}"
+            f"{a.reward_alpha:.6f}|{a.reward_beta:.6f}|"
+            f"{a.reward_gamma:.6f}|{a.reward_delta:.6f}|"
+            f"{a.final_score:.6f}|{a.timestamp_ms}|{a.public_key_id}"
         )
 
     def _compute_key_id(self) -> str:

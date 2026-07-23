@@ -121,7 +121,18 @@ def create_app(base_url: str | None = None) -> Starlette:
     card = build_agent_card(base_url, signer=signer)
     did_doc = build_did_document(base_url, signer=signer)
 
+    # Conformant A2A v0.3.0 card — this is what third-party A2A clients fetch at
+    # the well-known path. The bespoke card is retained at a `.legacy.json` path.
+    from agents.sheila.a2a_conformant import (
+        build_conformant_agent_card,
+        dispatch_jsonrpc,
+    )
+    conformant_card = build_conformant_agent_card(base_url, signer=signer)
+
     async def _agent_card(request: Request) -> Response:
+        return JSONResponse(conformant_card)
+
+    async def _legacy_agent_card(request: Request) -> Response:
         return JSONResponse(card)
 
     async def _did_json(request: Request) -> Response:
@@ -271,10 +282,26 @@ def create_app(base_url: str | None = None) -> Starlette:
         return JSONResponse({"task_id": task_id, "state": new_state,
                              "pending_prompt": engine.pending_prompt})
 
+    async def _a2a_jsonrpc(request: Request) -> Response:
+        """Conformant A2A JSON-RPC 2.0 endpoint (message/send, tasks/get,
+        tasks/cancel). Reuses the same TaskStore + backends as the bespoke path."""
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse(
+                {"jsonrpc": "2.0", "id": None,
+                 "error": {"code": -32700, "message": "Parse error"}},
+                status_code=200,
+            )
+        response = await dispatch_jsonrpc(body, store, _judge_backend, _redteam_backend)
+        return JSONResponse(response)
+
     return Starlette(routes=[
         Route("/.well-known/agent-card.json", _agent_card, methods=["GET"]),
+        Route("/.well-known/agent-card.legacy.json", _legacy_agent_card, methods=["GET"]),
         Route("/.well-known/did.json", _did_json, methods=["GET"]),
         Route("/health", _health, methods=["GET"]),
+        Route("/a2a/v1", _a2a_jsonrpc, methods=["POST"]),
         Route("/judge", _judge, methods=["POST"]),
         Route("/redteam/session", _redteam_session, methods=["POST"]),
         Route("/tasks", _create_task, methods=["POST"]),

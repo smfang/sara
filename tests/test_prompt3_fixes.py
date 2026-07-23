@@ -56,6 +56,10 @@ def _make_server(
     if scorer is None:
         scorer = MagicMock()
         scorer.evaluate = AsyncMock()
+        # Real scoring config so the ZK audit path (which reads the α/β/γ/δ reward
+        # weights into the signed attestation) sees numeric values, not mocks.
+        from src.arena.scorer import ScoringConfig
+        scorer._config = ScoringConfig()
     if store is None:
         store = MagicMock(spec=ArenaStore)
         store.save_submission = AsyncMock()
@@ -360,7 +364,13 @@ def test_erc8004_initialization_when_disabled():
 
 @pytest.mark.asyncio
 async def test_erc8004_attestation_called_after_payout():
-    """Fix 4c: After successful payout, record_evaluation_result is called."""
+    """Fix 4c: After successful payout, record_evaluation_result is called.
+
+    Unified with the ZK audit record (§7.3): when a signer is available the
+    ERC-8004 token is anchored to the L1/L2 attestation — subject is the signed
+    L2 attestation_id, label is the decision, and the on-chain result_hash is
+    the L1 commitment hash. (_make_server() builds a real AttestationSigner.)
+    """
     erc8004 = MagicMock()
     erc8004.record_evaluation_result = AsyncMock(return_value=None)
 
@@ -382,10 +392,17 @@ async def test_erc8004_attestation_called_after_payout():
 
     erc8004.record_evaluation_result.assert_called_once()
     call_kwargs = erc8004.record_evaluation_result.call_args.kwargs
-    assert call_kwargs["subject"] == sub.submission_id
-    assert "score:8.0000" in call_kwargs["label"]
-    assert "result_hash" in call_kwargs["metadata"]
-    assert call_kwargs["metadata"]["tx_hash"]
+    md = call_kwargs["metadata"]
+    # subject is the signed L2 attestation_id, and it matches the metadata copy.
+    assert call_kwargs["subject"].startswith("att_")
+    assert call_kwargs["subject"] == md["attestation_id"]
+    # label is the decision; this result has no successful attacks → "clean".
+    assert call_kwargs["label"] == "clean"
+    # on-chain result_hash is the full 64-hex L1 commitment (valid bytes32).
+    assert len(md["result_hash"]) == 64
+    assert md["commitment_id"].startswith("cmt_")
+    assert md["submission_id"] == sub.submission_id
+    assert md["tx_hash"]
 
 
 @pytest.mark.asyncio

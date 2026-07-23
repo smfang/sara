@@ -122,6 +122,16 @@ class ArenaServer:
         else:
             self._erc8004 = None
 
+        # ZK audit trail (§7.3): one P-384 signer per server process, plus the
+        # CAT-02 prev_hash chain state. Every scored submission produces an L1
+        # commitment + L2 signed attestation via _write_audit_record().
+        from src.crypto.attestation import AttestationSigner, CRYPTO_AVAILABLE
+        try:
+            self._att_signer = AttestationSigner() if CRYPTO_AVAILABLE else None
+        except Exception:
+            self._att_signer = None
+        self._last_commitment_hash: str | None = None
+
         self._portal = UIPortal(
             store=self._store,
             safety_classifier=safety_classifier,
@@ -400,6 +410,43 @@ class ArenaServer:
             status_code=202,
         )
 
+    async def _write_audit_record(
+        self, submission: Submission, result: Any, bounty: Bounty
+    ) -> Any:
+        """Produce + persist the L1 commitment + L2 signed attestation (§7.3).
+
+        Returns the `(signed_attestation, commitment)` pair so the caller can
+        anchor the on-chain ERC-8004 token to the same audit record; returns
+        None when no signer is available or on any failure. Best-effort and
+        non-fatal: a failure here must never break scoring or payout. Chains each
+        commitment to the previous via prev_hash (CAT-02).
+        """
+        if self._att_signer is None:
+            return None
+        try:
+            from src.arena.audit import build_signed_attestation
+
+            signed, commitment = build_signed_attestation(
+                submission_prompts=submission.prompts,
+                result=result,
+                scoring_config=self._scorer._config,
+                signer=self._att_signer,
+                prev_hash=self._last_commitment_hash,
+            )
+            self._last_commitment_hash = commitment.commitment
+            await self._store.insert_attestation(signed, commitment)
+            logger.info(
+                "Audit trail: L1+L2 attestation %s (commitment %s) for submission %s",
+                signed.attestation_id, commitment.commitment_id, submission.submission_id,
+            )
+            return signed, commitment
+        except Exception:
+            logger.warning(
+                "Audit trail write failed for submission %s",
+                submission.submission_id, exc_info=True,
+            )
+            return None
+
     async def _evaluate_submission(self, submission: Submission, bounty: Bounty) -> None:
         # Gate 1: empty commitment hash is rejected, not bypassed
         if not submission.commitment_hash:
@@ -431,6 +478,11 @@ class ArenaServer:
 
             submission.status = SubmissionStatus.SCORED
             await self._store.save_submission(submission)
+
+            # ZK audit trail (§7.3): every scored submission gets an L1 commitment
+            # + L2 signed attestation, independent of payout outcome (CAT-01).
+            # The returned pair anchors the on-chain ERC-8004 token below.
+            audit = await self._write_audit_record(submission, result, bounty)
 
             bounty.remaining_usdc -= result.payout_usdc
             if bounty.remaining_usdc <= 0:
@@ -486,33 +538,67 @@ class ArenaServer:
                 bounty_id=bounty.bounty_id,
             )
 
-            # On-chain attestation: publish verifiable proof of evaluation result
+            # On-chain attestation: publish verifiable proof of evaluation result.
+            # Anchored to the L1+L2 audit record (same commitment hash +
+            # attestation_id ClickHouse stores), so the on-chain token and the
+            # signed off-chain attestation cross-reference. Falls back to a
+            # standalone result hash when no signer is available.
             if self._erc8004 and tx_hash:
-                result_payload = {
-                    "submission_id": submission.submission_id,
-                    "bounty_id": bounty.bounty_id,
-                    "total_score": result.total_score,
-                    "payout_usdc": result.payout_usdc,
-                    "tx_hash": tx_hash,
-                    "evaluated_at": (
-                        result.evaluated_at.isoformat()
-                        if hasattr(result.evaluated_at, "isoformat")
-                        else str(result.evaluated_at)
-                    ),
-                }
-                result_hash = hashlib.sha3_256(
-                    json.dumps(result_payload, sort_keys=True, separators=(",", ":")).encode()
-                ).hexdigest()
+                if audit is not None:
+                    signed, commitment = audit
+                    subject = signed.attestation_id
+                    label = signed.sheila_decision
+                    result_hash = commitment.commitment
+                    metadata = {
+                        "result_hash": result_hash,          # → on-chain quoteHash (bytes32)
+                        "attestation_id": signed.attestation_id,
+                        "commitment_id": signed.commitment_id,
+                        "submission_id": submission.submission_id,
+                        "bounty_id": bounty.bounty_id,
+                        "total_score": result.total_score,
+                        "payout_usdc": result.payout_usdc,
+                        "tx_hash": tx_hash,
+                    }
+                else:
+                    # No signer: keep the pre-unification standalone anchor.
+                    result_payload = {
+                        "submission_id": submission.submission_id,
+                        "bounty_id": bounty.bounty_id,
+                        "total_score": result.total_score,
+                        "payout_usdc": result.payout_usdc,
+                        "tx_hash": tx_hash,
+                        "evaluated_at": (
+                            result.evaluated_at.isoformat()
+                            if hasattr(result.evaluated_at, "isoformat")
+                            else str(result.evaluated_at)
+                        ),
+                    }
+                    result_hash = hashlib.sha3_256(
+                        json.dumps(result_payload, sort_keys=True, separators=(",", ":")).encode()
+                    ).hexdigest()
+                    subject = submission.submission_id
+                    label = f"score:{result.total_score:.4f}"
+                    metadata = {"result_hash": result_hash, "tx_hash": tx_hash}
                 try:
-                    await self._erc8004.record_evaluation_result(
-                        subject=submission.submission_id,
-                        label=f"score:{result.total_score:.4f}",
-                        metadata={"result_hash": result_hash, "tx_hash": tx_hash},
+                    record = await self._erc8004.record_evaluation_result(
+                        subject=subject,
+                        label=label,
+                        metadata=metadata,
                     )
-                    logger.info(
-                        "ERC8004 attestation published for submission %s (hash=%s)",
-                        submission.submission_id, result_hash[:16],
-                    )
+                    if record is None:
+                        # No relayer/RPC configured — the publisher skipped the
+                        # on-chain write (it logs its own warning). Don't claim a
+                        # publish that didn't happen.
+                        logger.info(
+                            "ERC8004 attestation SKIPPED (no relayer/RPC) for submission %s "
+                            "(subject=%s hash=%s)",
+                            submission.submission_id, subject, result_hash[:16],
+                        )
+                    else:
+                        logger.info(
+                            "ERC8004 attestation published for submission %s (subject=%s hash=%s)",
+                            submission.submission_id, subject, result_hash[:16],
+                        )
                 except Exception as exc:
                     logger.warning(
                         "ERC8004 attestation failed for %s: %s (payout was successful)",

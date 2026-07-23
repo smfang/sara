@@ -24,7 +24,9 @@ def client():
 # ── Service HTTP contract ─────────────────────────────────────────────────────
 
 def test_agent_card_served(client):
-    r = client.get("/.well-known/agent-card.json")
+    # The well-known path now serves the CONFORMANT A2A card (third-party facing);
+    # the bespoke card moved to the .legacy.json alias.
+    r = client.get("/.well-known/agent-card.legacy.json")
     assert r.status_code == 200
     card = r.json()
     assert card["name"] == "sheila"
@@ -103,8 +105,9 @@ def test_api_uses_a2a_backend_when_url_set(monkeypatch):
 # ── Slice 2: signed Agent Card + DID ──────────────────────────────────────────
 
 def test_agent_card_is_signed_and_verifies(client):
+    # Legacy bespoke card (Slice 2) now lives at the .legacy.json alias.
     from agents.sheila.agent_card import verify_agent_card
-    card = client.get("/.well-known/agent-card.json").json()
+    card = client.get("/.well-known/agent-card.legacy.json").json()
     assert card["signed"] is True
     assert card["signature"] and card["public_key_pem"]
     assert card["did"].startswith("did:web:")
@@ -113,21 +116,21 @@ def test_agent_card_is_signed_and_verifies(client):
 
 def test_agent_card_tamper_fails_verification(client):
     from agents.sheila.agent_card import verify_agent_card
-    card = client.get("/.well-known/agent-card.json").json()
+    card = client.get("/.well-known/agent-card.legacy.json").json()
     card["capabilities"].append("admin")          # tamper a signed field
     assert verify_agent_card(card) is False
 
 
 def test_did_document_served_and_matches_card(client):
     doc = client.get("/.well-known/did.json").json()
-    card = client.get("/.well-known/agent-card.json").json()
+    card = client.get("/.well-known/agent-card.legacy.json").json()
     assert doc["id"] == card["did"]
     assert doc["verificationMethod"][0]["publicKeyPem"] == card["public_key_pem"]
     assert doc["service"][0]["type"] == "A2A"
 
 
 def test_card_binds_erc8004_and_payment_seams(client):
-    card = client.get("/.well-known/agent-card.json").json()
+    card = client.get("/.well-known/agent-card.legacy.json").json()
     assert card["erc8004"]["chain"] == "base"     # stub seam present
     assert card["payment"]["scheme"] == "x402"
 
